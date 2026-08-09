@@ -1,4 +1,4 @@
-.PHONY: up down up-h1 up-shadow up-testnet test e2e e2e-h2 cpp-test rust-test
+.PHONY: up down up-h1 up-shadow up-testnet test e2e e2e-h2 e2e-h3 cpp-test rust-test
 up:
 	docker compose up --build
 up-h1:
@@ -15,6 +15,8 @@ e2e:
 	PYTHONPATH=packages/quant:services/api pytest -q tests/test_e2e_shadow_h1.py
 e2e-h2:
 	PYTHONPATH=packages/quant:services/api pytest -q tests/test_h2_units.py tests/test_e2e_h2_execution.py
+e2e-h3:
+	PYTHONPATH=packages/quant:services/api pytest -q tests/test_h3_units.py tests/test_e2e_h3_research.py
 cpp-test:
 	./scripts/build_cpp_local.sh
 rust-test:

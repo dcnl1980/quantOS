@@ -1,13 +1,9 @@
-import math
-import random
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone, timedelta
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
-from quant_os.models import Quote
 from quant_os.backtest import ArbitrageBacktester
 
 from .config import settings
@@ -22,7 +18,7 @@ async def lifespan(app):
     await runtime.stop()
 
 
-app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],
@@ -278,20 +274,105 @@ async def reconciliation():
 
 @app.post("/api/v1/backtest/demo")
 async def backtest(ticks: int = 2000, notional: float = 1000):
-    rng = random.Random(7)
-    base = 118000
-    batches = []
-    for i in range(max(100, min(ticks, 100000))):
-        base *= math.exp(rng.gauss(0, .00012))
-        dis = rng.uniform(14, 42) if rng.random() < .06 else rng.uniform(-1, 1)
-        now = datetime.now(timezone.utc) + timedelta(milliseconds=i * 100)
+    # Keep legacy endpoint, but route through research dataset synthesizer.
+    from quant_os.research import synthesize_arbitrage_batches
+    dataset = synthesize_arbitrage_batches(ticks=max(100, min(ticks, 100000)), seed=7)
+    return ArbitrageBacktester(runtime.arb, notional).run(dataset.batches).to_dict()
 
-        def q(v, off):
-            mid = base * (1 + off / 10000)
-            return Quote(v, "BTCUSDT", mid * .99995, mid * 1.00005, 2, 2, now, now, i)
 
-        batches.append([q("sim_a", 0), q("sim_b", dis)])
-    return ArbitrageBacktester(runtime.arb, notional).run(batches).to_dict()
+@app.get("/api/v1/research")
+async def research_plane():
+    return runtime.research.snapshot()
+
+
+@app.post("/api/v1/research/walk-forward")
+async def research_walk_forward(
+    ticks: int = 2400,
+    seed: int = 7,
+    train_size: int = 800,
+    test_size: int = 200,
+    step: int = 200,
+    min_net_edge_bps: float | None = None,
+):
+    params = {}
+    if min_net_edge_bps is not None:
+        params["min_net_edge_bps"] = min_net_edge_bps
+    return runtime.research.run_walk_forward(
+        ticks=ticks, seed=seed, train_size=train_size,
+        test_size=test_size, step=step, params=params or None,
+    )
+
+
+@app.post("/api/v1/research/monte-carlo")
+async def research_monte_carlo(
+    ticks: int = 1500,
+    seed: int = 7,
+    runs: int = 40,
+    min_net_edge_bps: float | None = None,
+):
+    params = {}
+    if min_net_edge_bps is not None:
+        params["min_net_edge_bps"] = min_net_edge_bps
+    return runtime.research.run_monte_carlo(
+        ticks=ticks, seed=seed, runs=runs, params=params or None,
+    )
+
+
+@app.post("/api/v1/research/sensitivity")
+async def research_sensitivity(
+    ticks: int = 1500,
+    seed: int = 7,
+    parameter: str = "min_net_edge_bps",
+    values: str = "4,6,8,10,12,16,20",
+):
+    parsed = [float(x.strip()) for x in values.split(",") if x.strip()]
+    return runtime.research.run_sensitivity(
+        ticks=ticks, seed=seed, parameter=parameter, values=parsed,
+    )
+
+
+@app.post("/api/v1/research/suite")
+async def research_suite(
+    ticks: int = 2400,
+    seed: int = 7,
+    mc_runs: int = 30,
+    stage: str = "paper",
+    min_net_edge_bps: float | None = None,
+):
+    params = {}
+    if min_net_edge_bps is not None:
+        params["min_net_edge_bps"] = min_net_edge_bps
+    return runtime.research.run_full_suite(
+        ticks=ticks, seed=seed, mc_runs=mc_runs, params=params or None, stage=stage,
+    )
+
+
+@app.get("/api/v1/research/experiments")
+async def research_experiments(limit: int = 50):
+    return [e.to_dict() for e in runtime.research.experiments.list(limit)]
+
+
+@app.get("/api/v1/research/experiments/{experiment_id}")
+async def research_experiment(experiment_id: str):
+    exp = runtime.research.experiments.get(experiment_id)
+    if not exp:
+        return {"ok": False, "reason": "unknown_experiment"}
+    return exp.to_dict()
+
+
+@app.post("/api/v1/research/promote/{experiment_id}")
+async def research_promote(experiment_id: str, stage: str = "paper"):
+    return runtime.research.promote(experiment_id, stage=stage)
+
+
+@app.get("/api/v1/research/features")
+async def research_features():
+    return runtime.research.features.snapshot()
+
+
+@app.get("/api/v1/research/governance")
+async def research_governance():
+    return runtime.research.governor.snapshot()
 
 
 @app.get("/metrics")

@@ -14,9 +14,10 @@ Venue testnet brokers, authenticated gateway, user/order streams, idempotent ord
 cancel/replace, partial-fill hedge policy, inventory allocator, fee tiers and reconciliation.
 See `docs/H2_EXECUTION.md`.
 
-## H3 research
+## H3 research (implemented)
 Walk-forward validation, Monte Carlo perturbation, experiment registry, parameter sensitivity,
 feature store, strategy governance and promotion gates.
+See `docs/H3_RESEARCH.md`.
 
 ## H4 market ontology
 Instrument/venue/underlying/settlement graph, prediction-market semantics, contradiction detection.

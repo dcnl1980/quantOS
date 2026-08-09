@@ -52,7 +52,13 @@
     ],
     "research": [
       "replay backtester",
-      "strategy factory design"
+      "strategy factory design",
+      "walk-forward validation",
+      "Monte Carlo perturbation",
+      "parameter sensitivity",
+      "feature store",
+      "experiment registry",
+      "promotion gates"
     ]
   },
   "validation": {

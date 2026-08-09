@@ -20,6 +20,7 @@ from quant_os.fee_tiers import FeeSchedule
 from quant_os.inventory import InventoryAllocator
 from quant_os.hedge import PartialFillHedgePolicy
 from quant_os.live_broker import LiveBroker, LiveTradingDisabled
+from quant_os.research import PromotionGate
 
 from .config import settings
 from .events import EventBus
@@ -31,6 +32,7 @@ from .adapters.binance_depth import BinanceDepthAdapter
 from .db import persist_opportunity, persist_fill
 from .dataplane import build_bus, build_archive, build_telemetry
 from .execution import ExecutionGateway
+from .research import ResearchLab
 
 
 class QuantRuntime:
@@ -109,6 +111,22 @@ class QuantRuntime:
             partial_fill_ratio=settings.testnet_partial_fill_ratio,
         )
         self.live_broker_error: str | None = None
+        self.research = ResearchLab(
+            fees=settings.fees,
+            default_slippage_bps=settings.default_slippage_bps,
+            min_net_edge_bps=settings.min_net_edge_bps,
+            notional=settings.paper_order_notional,
+            gate=PromotionGate(
+                min_trades=settings.research_min_trades,
+                min_expectancy=settings.research_min_expectancy,
+                max_drawdown_pct=settings.research_max_drawdown_pct,
+                min_oos_stability=settings.research_min_oos_stability,
+                min_mc_robustness=settings.research_min_mc_robustness,
+                min_mc_p05_pnl=settings.research_min_mc_p05_pnl,
+                min_sensitivity_stability=settings.research_min_sensitivity_stability,
+                min_win_rate=settings.research_min_win_rate,
+            ),
+        )
 
     async def start(self):
         await self.data_bus.start()
@@ -604,6 +622,7 @@ class QuantRuntime:
                 "live_error": self.live_broker_error,
             },
             "instruments": self.registry.to_list(),
+            "research": self.research.snapshot(),
         }
 
 

@@ -18,5 +18,9 @@
 feed disconnect, stale quote, sequence gap, strategy silence, rejection spike, partial fill imbalance,
 reconciliation mismatch, drawdown, daily loss, clock drift and persistence lag.
 
+## Research promotion
+Candidates should pass `POST /api/v1/research/suite` (walk-forward + Monte Carlo + sensitivity + gates)
+before paper/shadow/testnet scale-up. See `docs/H3_RESEARCH.md`.
+
 ## Deployment order
-persistence -> feeds -> freshness checks -> strategies observe-only/shadow -> risk -> paper broker -> reconciliation checks -> UI.
+persistence -> feeds -> freshness checks -> research gates -> strategies observe-only/shadow -> risk -> paper/testnet broker -> reconciliation checks -> UI.
