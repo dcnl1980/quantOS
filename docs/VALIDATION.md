@@ -57,9 +57,17 @@ environment did not have a Docker daemon, so Kafka/ClickHouse were exercised via
 - Runtime e2e `EXECUTION_MODE=testnet` — trades/hedges/fills/inventory populated
 - Live mode remains blocked without acknowledgement + testnet promotion
 
-## H3 research plane (this branch)
+## H3 research plane
 - Walk-forward / Monte Carlo / sensitivity / feature store / experiment registry unit tests
 - Promotion gate pass/fail coverage
 - ResearchLab full suite e2e
 - FastAPI research endpoints e2e (`/research/*`)
 - Run: `make test` / `make e2e-h3`
+
+## H4 market ontology (this branch)
+- Graph edge-type coverage (listings, hedges, settlement, complements, detectors)
+- Prediction-market complement normalization
+- Contradiction detector (complement, dispersion, out-of-range)
+- Polymarket ontology bridge ingest
+- FastAPI ontology endpoints e2e (`/ontology/*`, `/market-graph`)
+- Run: `make test` / `make e2e-h4`

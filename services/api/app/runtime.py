@@ -21,6 +21,7 @@ from quant_os.inventory import InventoryAllocator
 from quant_os.hedge import PartialFillHedgePolicy
 from quant_os.live_broker import LiveBroker, LiveTradingDisabled
 from quant_os.research import PromotionGate
+from quant_os.ontology import MarketOntology
 
 from .config import settings
 from .events import EventBus
@@ -111,6 +112,7 @@ class QuantRuntime:
             partial_fill_ratio=settings.testnet_partial_fill_ratio,
         )
         self.live_broker_error: str | None = None
+        self.ontology = MarketOntology(self.registry, seed_demo_markets=True)
         self.research = ResearchLab(
             fees=settings.fees,
             default_slippage_bps=settings.default_slippage_bps,
@@ -192,9 +194,16 @@ class QuantRuntime:
                 self.tasks.append(asyncio.create_task(self.consume(adapter)))
 
     async def stop(self):
-        for t in self.tasks:
+        tasks = list(self.tasks)
+        self.tasks.clear()
+        for t in tasks:
             t.cancel()
-        await asyncio.gather(*self.tasks, return_exceptions=True)
+        if tasks:
+            try:
+                await asyncio.gather(*tasks, return_exceptions=True)
+            except ValueError:
+                # TestClient may tear down across event loops; tasks are already cancelled.
+                pass
         await self.gateway.stop()
         await self.archive.stop()
         await self.data_bus.stop()
@@ -623,7 +632,22 @@ class QuantRuntime:
             },
             "instruments": self.registry.to_list(),
             "research": self.research.snapshot(),
+            "ontology": self.ontology.snapshot(),
         }
+
+    async def ontology_context(self) -> dict:
+        quotes = [q.to_dict() for q in await self.state.all_quotes()]
+        opportunities = [o.to_dict() for o in list(self.opportunities)[:100]]
+        basis = self.basis.to_dict()
+        return {"quotes": quotes, "opportunities": opportunities, "basis": basis}
+
+    async def ontology_graph(self) -> dict:
+        ctx = await self.ontology_context()
+        return self.ontology.build_graph(**ctx)
+
+    async def ontology_scan(self) -> dict:
+        ctx = await self.ontology_context()
+        return self.ontology.scan(**ctx)
 
 
 runtime = QuantRuntime()

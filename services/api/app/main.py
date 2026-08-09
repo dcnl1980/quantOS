@@ -18,7 +18,7 @@ async def lifespan(app):
     await runtime.stop()
 
 
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],
@@ -170,37 +170,83 @@ async def engine_status():
 
 @app.get("/api/v1/market-graph")
 async def market_graph():
-    base = runtime.registry.graph()
-    nodes = {n["id"]: n for n in base["nodes"]}
-    edges = list(base["edges"])
-    for q in await runtime.state.all_quotes():
-        sid = f"symbol:{q.symbol}"
-        vid = f"venue:{q.venue}"
-        nodes.setdefault(sid, {"id": sid, "type": "instrument", "label": q.symbol})
-        nodes.setdefault(vid, {"id": vid, "type": "venue", "label": q.venue})
-        edges.append({"source": sid, "target": vid, "type": "LISTED_ON", "live": True})
-    for op in list(runtime.opportunities)[:100]:
-        if op.type.value != "cross_venue":
-            continue
-        a, b = f"venue:{op.buy_venue}", f"venue:{op.sell_venue}"
-        edges.append({
-            "source": a,
-            "target": b,
-            "type": "ARBITRAGE_WITH",
-            "symbol": op.symbol,
-            "net_edge_bps": op.net_edge_bps,
-        })
-    basis = runtime.basis.to_dict()
-    edges.append({
-        "source": "currency:USDT",
-        "target": "currency:USD",
-        "type": "BASIS",
-        "usdt_usd": basis["usdt_usd"],
-        "basis_bps": basis["basis_bps"],
-    })
-    nodes.setdefault("currency:USDT", {"id": "currency:USDT", "type": "currency", "label": "USDT"})
-    nodes.setdefault("currency:USD", {"id": "currency:USD", "type": "currency", "label": "USD"})
-    return {"nodes": list(nodes.values()), "edges": edges}
+    """Legacy alias for the H4 ontology graph."""
+    return await runtime.ontology_graph()
+
+
+@app.get("/api/v1/ontology")
+async def ontology_plane():
+    # Refresh summary counts without forcing a full contradiction rescan every poll.
+    graph = await runtime.ontology_graph()
+    snap = runtime.ontology.snapshot()
+    snap["graph"] = {
+        "nodes": len(graph.get("nodes", [])),
+        "edges": len(graph.get("edges", [])),
+        "edge_types": (graph.get("stats") or {}).get("edge_types", {}),
+    }
+    return snap
+
+
+@app.get("/api/v1/ontology/graph")
+async def ontology_graph():
+    return await runtime.ontology_graph()
+
+
+@app.get("/api/v1/ontology/prediction-markets")
+async def ontology_prediction_markets():
+    return runtime.ontology.prediction_book.to_list()
+
+
+@app.post("/api/v1/ontology/prediction-markets")
+async def ontology_register_prediction_market(
+    question: str,
+    venue: str = "polymarket",
+    settlement_source: str = "spot:binance:BTCUSDT",
+    underlying: str = "BTC",
+    yes_probability: float = 0.5,
+    market_id: str | None = None,
+    fee_bps: float = 100.0,
+):
+    return runtime.ontology.register_prediction_market(
+        question=question,
+        venue=venue,
+        settlement_source=settlement_source,
+        underlying=underlying,
+        yes_probability=yes_probability,
+        market_id=market_id,
+        fee_bps=fee_bps,
+    )
+
+
+@app.post("/api/v1/ontology/prediction-markets/{market_id}/probability")
+async def ontology_update_probability(
+    market_id: str,
+    outcome_label: str = "YES",
+    probability: float = 0.5,
+):
+    updated = runtime.ontology.update_outcome_probability(market_id, outcome_label, probability)
+    if not updated:
+        return {"ok": False, "reason": "unknown_market"}
+    return updated
+
+
+@app.get("/api/v1/ontology/contradictions")
+async def ontology_contradictions():
+    if not runtime.ontology.contradictions():
+        scan = await runtime.ontology_scan()
+        return {
+            "contradictions": scan["contradictions"],
+            "summary": scan["summary"],
+        }
+    return {
+        "contradictions": runtime.ontology.contradictions(),
+        "summary": runtime.ontology.snapshot()["contradictions"],
+    }
+
+
+@app.post("/api/v1/ontology/scan")
+async def ontology_scan():
+    return await runtime.ontology_scan()
 
 
 @app.get("/api/v1/instruments")

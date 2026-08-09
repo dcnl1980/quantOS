@@ -12,3 +12,4 @@ from .inventory import InventoryAllocator
 from .hedge import PartialFillHedgePolicy, HedgeAction
 from .reconciliation import Reconciler, VenueOrderReport
 from .backtest import ArbitrageBacktester, BacktestResult
+from .ontology import MarketOntology

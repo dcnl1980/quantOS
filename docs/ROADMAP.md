@@ -19,8 +19,9 @@ Walk-forward validation, Monte Carlo perturbation, experiment registry, paramete
 feature store, strategy governance and promotion gates.
 See `docs/H3_RESEARCH.md`.
 
-## H4 market ontology
+## H4 market ontology (implemented)
 Instrument/venue/underlying/settlement graph, prediction-market semantics, contradiction detection.
+See `docs/H4_ONTOLOGY.md`.
 
 ## H5 AI copilot
 Strategy explanations, experiment planning, anomaly analysis, natural-language analytics and governed

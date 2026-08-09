@@ -26,8 +26,10 @@ Venues -> Feed gateways -> Kafka/Redpanda -> Market state / ClickHouse archive
 
 The included local runtime intentionally co-locates these functions so the entire system can run on one machine.
 
-## Market graph extension
+## Market graph extension (H4)
 
 Model relationships such as `LISTED_ON`, `DERIVED_FROM`, `PRICED_IN`, `HEDGES`, `CORRELATED_WITH`,
-`SETTLES_FROM`, `DETECTED_BY` and `CAUSED_BY`. That enables explainable cross-market intelligence without
-placing probabilistic AI in the execution loop.
+`SETTLES_FROM`, `DETECTED_BY` and `CAUSED_BY`. Prediction-market outcomes add `OUTCOME_OF` /
+`COMPLEMENTS`. Contradiction detection surfaces complement violations and cross-venue dispersion.
+See `docs/H4_ONTOLOGY.md`. That enables explainable cross-market intelligence without placing
+probabilistic AI in the execution loop.
