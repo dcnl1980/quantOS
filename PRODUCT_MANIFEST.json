@@ -11,6 +11,7 @@
   "execution_modes": [
     "paper",
     "shadow",
+    "testnet",
     "live (blocked stub)"
   ],
   "execution_mode_default": "paper",
@@ -28,6 +29,16 @@
       "USD/USDT basis",
       "clock telemetry",
       "OpenTelemetry"
+    ],
+    "execution_plane": [
+      "testnet authenticated brokers",
+      "idempotent order state machine",
+      "user/order streams",
+      "cancel/replace",
+      "partial-fill hedge policy",
+      "inventory allocator",
+      "fee tiers",
+      "reconciliation"
     ],
     "market_feeds": [
       "Binance Spot public WebSocket",

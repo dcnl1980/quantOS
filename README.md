@@ -64,6 +64,16 @@ MARKET_MODE=shadow docker compose up --build
 Strategies and risk still run. Hypothetical fills are emitted as `shadow_fill` events. Portfolio cash
 and native engine state are not mutated, and no venue orders are sent.
 
+## 3b. H2 testnet execution
+
+```bash
+EXECUTION_MODE=testnet TESTNET_VENUES=sim_a,sim_b docker compose up --build
+```
+
+Authenticated testnet/simulated venue router with idempotent orders, cancel/replace, partial-fill
+hedging, inventory allocation, fee tiers and reconciliation. See `docs/H2_EXECUTION.md`.
+Live capital remains gated.
+
 ## 4. H1 data plane (Redpanda + ClickHouse)
 
 ```bash
@@ -152,6 +162,7 @@ See `docs/EXECUTION_PROTOCOL.md`.
 - second risk gate inside native process
 - paired paper execution
 - shadow dry-run (`EVAL_ARB` / `EXECUTION_MODE=shadow`)
+- testnet gateway (`EXECUTION_MODE=testnet`) with order FSM, hedges, recon
 - execution cooldown per route
 - fills, realized P&L and turnover
 - circuit breaker
