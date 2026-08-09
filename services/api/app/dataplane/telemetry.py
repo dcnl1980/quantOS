@@ -33,10 +33,13 @@ class Telemetry:
             from opentelemetry.sdk.trace.export import SimpleSpanProcessor, ConsoleSpanExporter
 
             resource = Resource.create({"service.name": self.service_name})
-            provider = TracerProvider(resource=resource)
-            # Keep console quiet in product path; spans are captured via wrapper attributes.
-            provider.add_span_processor(SimpleSpanProcessor(_RecordingExporter(self)))
-            trace.set_tracer_provider(provider)
+            current = trace.get_tracer_provider()
+            if isinstance(current, TracerProvider):
+                provider = current
+            else:
+                provider = TracerProvider(resource=resource)
+                provider.add_span_processor(SimpleSpanProcessor(_RecordingExporter(self)))
+                trace.set_tracer_provider(provider)
             self._provider = provider
             self._tracer = trace.get_tracer(self.service_name)
         except Exception as exc:

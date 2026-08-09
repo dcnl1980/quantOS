@@ -200,6 +200,8 @@ async def test_e2e_basis_normalization_on_consume():
     await rt.archive.start()
     try:
         await rt.consume(OneShot())
+        # Journaling is fire-and-forget; allow the task to settle.
+        await asyncio.sleep(0.05)
         quotes = await rt.state.all_quotes()
         assert len(quotes) == 1
         assert abs(quotes[0].bid - 99.0) < 1e-9

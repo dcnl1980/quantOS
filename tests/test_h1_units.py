@@ -64,7 +64,7 @@ def test_usdt_usd_basis_conversion():
     bid, ask = basis.normalize_quote_prices(100.0, 100.2, "USDT", "USD")
     assert abs(bid - 99.9) < 1e-9
     assert abs(ask - 100.0998) < 1e-6
-    assert basis.basis_bps() == -10.0
+    assert abs(basis.basis_bps() - (-10.0)) < 1e-9
 
 
 def test_clock_telemetry_offset():
