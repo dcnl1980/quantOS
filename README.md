@@ -181,7 +181,11 @@ See `docs/EXECUTION_PROTOCOL.md`.
 - deterministic replay backtester
 - synthetic backtest endpoint
 - Strategy Factory architecture
-- walk-forward / Monte Carlo production roadmap
+- walk-forward validation
+- Monte Carlo perturbation
+- parameter sensitivity sweeps
+- experiment registry + promotion gates
+- feature store
 - benchmark and smoke-test tools
 
 ### Platform

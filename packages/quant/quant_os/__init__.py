@@ -11,3 +11,4 @@ from .fee_tiers import FeeSchedule, FeeTier
 from .inventory import InventoryAllocator
 from .hedge import PartialFillHedgePolicy, HedgeAction
 from .reconciliation import Reconciler, VenueOrderReport
+from .backtest import ArbitrageBacktester, BacktestResult

@@ -75,6 +75,18 @@ class Settings(BaseSettings):
     usdt_usd_basis: float = 1.0
     clock_stale_ms: float = 250.0
 
+    # H3 research plane / promotion gates
+    research_min_trades: int = 20
+    research_min_expectancy: float = 0.0
+    research_max_drawdown_pct: float = 5.0
+    research_min_oos_stability: float = 0.5
+    research_min_mc_robustness: float = 0.5
+    research_min_mc_p05_pnl: float = 0.0
+    research_min_sensitivity_stability: float = 0.4
+    research_min_win_rate: float = 45.0
+    research_default_ticks: int = 2400
+    research_mc_runs: int = 30
+
     model_config = SettingsConfigDict(env_file=("../../.env", ".env"), extra="ignore")
 
     def resolved_market_mode(self) -> str:

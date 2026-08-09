@@ -66,4 +66,12 @@ TESTNET_API_SECRET=testnet
 
 See `docs/H2_EXECUTION.md`.
 
+## H3 research suite
+
+```bash
+curl -X POST 'http://localhost:8000/api/v1/research/suite?ticks=2400&mc_runs=30'
+```
+
+See `docs/H3_RESEARCH.md`.
+
 Read `README.md` and `docs/VALIDATION.md` before enabling any future authenticated venue router.

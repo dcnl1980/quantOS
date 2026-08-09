@@ -11,3 +11,17 @@ failure modes.
 
 AI can propose hypotheses, generate experiment configs, explain fills, compare runs and investigate anomalies.
 It should not hold venue signing keys or bypass deterministic risk policy.
+
+## Implemented in H3
+
+The research lab (`docs/H3_RESEARCH.md`) implements this path in-process:
+
+- synthetic replay datasets
+- walk-forward OOS folds + stability score
+- Monte Carlo quote perturbations (p05/ruin/robustness)
+- parameter sensitivity sweeps
+- feature store for cross-venue research features
+- experiment registry with promote/reject
+- `PromotionGate` / `StrategyGovernor` enforcing deterministic thresholds
+
+Use `POST /api/v1/research/suite` for an end-to-end candidate evaluation.
