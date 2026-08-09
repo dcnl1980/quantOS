@@ -42,6 +42,7 @@ async def root():
         "execution_engine": settings.execution_engine,
         "paper_trading": settings.resolved_execution_mode() == "paper",
         "shadow_trading": settings.is_shadow,
+        "testnet_trading": settings.is_testnet,
         "live_trading_enabled": settings.enable_live_trading,
         "data_plane_enabled": settings.data_plane_enabled,
         "docs": "/docs",
@@ -110,15 +111,20 @@ async def reset_cb():
 @app.get("/api/v1/strategies")
 async def strategies():
     mode = settings.resolved_execution_mode()
+    auto = (
+        (mode == "paper" and settings.paper_auto_execute)
+        or (mode == "testnet" and settings.testnet_auto_execute)
+    )
     return [
         {
             "id": "cross_venue_arbitrage",
             "status": "active",
-            "auto_execute": mode == "paper" and settings.paper_auto_execute,
+            "auto_execute": auto,
             "shadow": mode == "shadow",
+            "testnet": mode == "testnet",
             "description": "Best-ask versus best-bid cross-venue dislocation after modeled fees and slippage.",
             "min_net_edge_bps": settings.min_net_edge_bps,
-            "execution": settings.execution_engine,
+            "execution": "testnet-gateway" if mode == "testnet" else settings.execution_engine,
             "execution_mode": mode,
         },
         {
@@ -232,6 +238,42 @@ async def basis():
 @app.get("/api/v1/clock")
 async def clock():
     return runtime.clock.snapshot()
+
+
+@app.get("/api/v1/execution-plane")
+async def execution_plane():
+    snap = await runtime.snapshot()
+    return snap["execution_plane"]
+
+
+@app.get("/api/v1/orders")
+async def orders():
+    return runtime.gateway.fsm.snapshot()
+
+
+@app.post("/api/v1/orders/{client_order_id}/cancel")
+async def cancel_order(client_order_id: str):
+    return await runtime.gateway.cancel_order(client_order_id)
+
+
+@app.post("/api/v1/orders/{client_order_id}/replace")
+async def replace_order(client_order_id: str, price: float, quantity: float | None = None):
+    return await runtime.gateway.replace_order(client_order_id, price, quantity)
+
+
+@app.get("/api/v1/inventory")
+async def inventory():
+    return runtime.inventory.to_dict()
+
+
+@app.get("/api/v1/fee-tiers")
+async def fee_tiers():
+    return runtime.fee_schedule.to_dict()
+
+
+@app.get("/api/v1/reconciliation")
+async def reconciliation():
+    return await runtime.gateway.reconcile_once() if settings.is_testnet else runtime.gateway.reconciler.to_dict()
 
 
 @app.post("/api/v1/backtest/demo")

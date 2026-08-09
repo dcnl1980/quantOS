@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # Market data source: simulator | live | shadow
     # shadow is an alias for live feeds + execution_mode=shadow.
     market_mode: str = "simulator"
-    # Execution policy: paper | shadow | live
+    # Execution policy: paper | shadow | testnet | live
     execution_mode: str = "paper"
     live_venues: str = "binance,coinbase"
     symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT"
@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     live_trading_ack: str = ""
     log_level: str = "INFO"
 
+    # H2 execution plane
+    testnet_venues: str = "sim_a,sim_b"
+    testnet_api_key: str = "testnet"
+    testnet_api_secret: str = "testnet"
+    testnet_partial_fill_ratio: float = 0.65
+    testnet_auto_execute: bool = True
+    inventory_venue_weights: str = "sim_a:0.5,sim_b:0.5,binance:0.5,coinbase:0.5"
+    recon_interval_sec: float = 1.0
+    min_hedge_qty: float = 1e-6
+    fee_tier_volume_binance: float = 0
+    fee_tier_volume_coinbase: float = 0
+
     # H1 data plane
     data_plane_enabled: bool = True
     bus_backend: str = "memory"  # memory | kafka | redpanda
@@ -77,7 +89,7 @@ class Settings(BaseSettings):
         if self.market_mode.lower().strip() == "shadow":
             return "shadow"
         mode = self.execution_mode.lower().strip()
-        if mode not in {"paper", "shadow", "live"}:
+        if mode not in {"paper", "shadow", "testnet", "live"}:
             return "paper"
         return mode
 
@@ -90,12 +102,31 @@ class Settings(BaseSettings):
         return [x.strip().lower() for x in self.live_venues.split(",") if x.strip()]
 
     @property
+    def testnet_venue_list(self):
+        return [x.strip().lower() for x in self.testnet_venues.split(",") if x.strip()]
+
+    @property
+    def inventory_weights(self) -> dict[str, float]:
+        out: dict[str, float] = {}
+        for part in self.inventory_venue_weights.split(","):
+            if ":" not in part:
+                continue
+            venue, weight = part.split(":", 1)
+            try:
+                out[venue.strip().lower()] = float(weight)
+            except ValueError:
+                continue
+        return out
+
+    @property
     def fees(self):
         return {
             "binance": self.binance_taker_fee_bps,
             "coinbase": self.coinbase_taker_fee_bps,
             "sim_a": self.sim_a_taker_fee_bps,
             "sim_b": self.sim_b_taker_fee_bps,
+            "binance_testnet": self.binance_taker_fee_bps,
+            "coinbase_testnet": self.coinbase_taker_fee_bps,
         }
 
     @property
@@ -104,11 +135,20 @@ class Settings(BaseSettings):
 
     @property
     def sends_orders(self) -> bool:
-        return self.resolved_execution_mode() == "paper" and self.paper_auto_execute
+        mode = self.resolved_execution_mode()
+        if mode == "paper":
+            return self.paper_auto_execute
+        if mode == "testnet":
+            return self.testnet_auto_execute
+        return False
 
     @property
     def is_shadow(self) -> bool:
         return self.resolved_execution_mode() == "shadow"
+
+    @property
+    def is_testnet(self) -> bool:
+        return self.resolved_execution_mode() == "testnet"
 
 
 settings = Settings()

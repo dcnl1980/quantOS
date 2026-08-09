@@ -49,3 +49,11 @@ Local validation for this branch also ran `cargo test --release` including the s
 
 Docker Compose H1 overlay (`redpanda` + `clickhouse`) is provided in `docker-compose.h1.yml`; this validation
 environment did not have a Docker daemon, so Kafka/ClickHouse were exercised via in-memory backends.
+
+## H2 execution plane (this branch)
+- Order FSM, fee tiers, inventory, hedge policy, reconciler unit tests — passed
+- Simulated testnet broker idempotent place/cancel — passed
+- Gateway paired testnet trade + recon — passed
+- Runtime e2e `EXECUTION_MODE=testnet` — trades/hedges/fills/inventory populated
+- Live mode remains blocked without acknowledgement + testnet promotion
+- Full suite: `pytest` **25 passed**

@@ -55,4 +55,15 @@ docker compose -f docker-compose.yml -f docker-compose.h1.yml up --build
 
 See `docs/H1_DATA_PLANE.md`.
 
+## H2 testnet execution
+
+```env
+EXECUTION_MODE=testnet
+TESTNET_VENUES=sim_a,sim_b
+TESTNET_API_KEY=testnet
+TESTNET_API_SECRET=testnet
+```
+
+See `docs/H2_EXECUTION.md`.
+
 Read `README.md` and `docs/VALIDATION.md` before enabling any future authenticated venue router.

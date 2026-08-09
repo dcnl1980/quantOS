@@ -10,6 +10,7 @@ services:
       - quant_pg:/var/lib/postgresql/data
       - ./infra/postgres/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
       - ./infra/postgres/002_instruments.sql:/docker-entrypoint-initdb.d/002_instruments.sql:ro
+      - ./infra/postgres/003_execution_h2.sql:/docker-entrypoint-initdb.d/003_execution_h2.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quant -d quant"]
       interval: 3s
