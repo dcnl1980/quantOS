@@ -55,7 +55,24 @@ SYMBOLS=BTCUSDT,ETHUSDT,SOLUSDT
 
 The system consumes public market-data WebSockets while keeping execution in paper mode.
 
-## 3. Use the Rust engine instead
+## 3. Shadow mode (observe only)
+
+```bash
+MARKET_MODE=shadow docker compose up --build
+```
+
+Strategies and risk still run. Hypothetical fills are emitted as `shadow_fill` events. Portfolio cash
+and native engine state are not mutated, and no venue orders are sent.
+
+## 4. H1 data plane (Redpanda + ClickHouse)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.h1.yml up --build
+```
+
+See `docs/H1_DATA_PLANE.md` for bus/archive/orderbook/basis/telemetry endpoints.
+
+## 5. Use the Rust engine instead
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.rust.yml up --build
@@ -64,7 +81,7 @@ docker compose -f docker-compose.yml -f docker-compose.rust.yml up --build
 Both native engines implement the same private TCP execution protocol, so the API, risk telemetry,
 strategies and UI do not need to change.
 
-## 4. Native engine responsibilities
+## 6. Native engine responsibilities
 
 The C++/Rust service independently enforces:
 
@@ -83,7 +100,7 @@ The C++/Rust service independently enforces:
 
 The Python layer cannot bypass those controls by simply constructing a trade request.
 
-## 5. Execution protocol
+## 7. Execution protocol
 
 The API keeps one persistent private TCP connection to the engine.
 
@@ -110,7 +127,7 @@ slippage_bps
 
 See `docs/EXECUTION_PROTOCOL.md`.
 
-## 6. Product features
+## 8. Product features
 
 ### Market layer
 - Binance Spot `bookTicker` public WebSocket
@@ -134,10 +151,20 @@ See `docs/EXECUTION_PROTOCOL.md`.
 - persistent private TCP transport
 - second risk gate inside native process
 - paired paper execution
+- shadow dry-run (`EVAL_ARB` / `EXECUTION_MODE=shadow`)
 - execution cooldown per route
 - fills, realized P&L and turnover
 - circuit breaker
 - reset/control API
+
+### H1 data plane
+- Redpanda/Kafka quote + book bus
+- ClickHouse raw tick archive
+- Binance L2 books with gap recovery
+- instrument registry
+- USD/USDT basis normalization
+- exchange clock skew telemetry
+- OpenTelemetry spans
 
 ### Research
 - deterministic replay backtester
@@ -151,7 +178,7 @@ See `docs/EXECUTION_PROTOCOL.md`.
 - WebSocket event bus
 - Next.js terminal
 - PostgreSQL persistence
-- Docker Compose
+- Docker Compose (+ H1 overlay)
 - Prometheus endpoint
 - health/readiness endpoints
 - SQL audit schema
@@ -159,7 +186,7 @@ See `docs/EXECUTION_PROTOCOL.md`.
 - Python pytest
 - Rust unit tests executed by its Docker build
 
-## 7. Dashboard
+## 9. Dashboard
 
 The terminal shows:
 
@@ -176,7 +203,7 @@ The terminal shows:
 - risk guardrails
 - live event bus
 
-## 8. Validate the native engine locally
+## 10. Validate the native engine locally
 
 C++:
 
@@ -199,7 +226,7 @@ The benchmark reports two different metrics:
 
 Do not interpret localhost benchmark numbers as exchange execution latency.
 
-## 9. Important architecture boundary
+## 11. Important architecture boundary
 
 ```text
                       RESEARCH / CONTROL PLANE
@@ -228,7 +255,7 @@ LIVE FEEDS -> NORMALIZER -> STRATEGIES -> OPPORTUNITY
 
 No LLM call is required for a quote, signal, risk decision or execution.
 
-## 10. Production path to real capital
+## 12. Production path to real capital
 
 The next step is not “turn on an API key.” A proper authenticated router needs, per venue:
 

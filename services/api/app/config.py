@@ -1,10 +1,15 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     app_name: str = "Quant OS"
     env: str = "dev"
 
+    # Market data source: simulator | live | shadow
+    # shadow is an alias for live feeds + execution_mode=shadow.
     market_mode: str = "simulator"
+    # Execution policy: paper | shadow | live
+    execution_mode: str = "paper"
     live_venues: str = "binance,coinbase"
     symbols: str = "BTCUSDT,ETHUSDT,SOLUSDT"
     sim_tick_ms: int = 250
@@ -43,7 +48,38 @@ class Settings(BaseSettings):
     live_trading_ack: str = ""
     log_level: str = "INFO"
 
+    # H1 data plane
+    data_plane_enabled: bool = True
+    bus_backend: str = "memory"  # memory | kafka | redpanda
+    kafka_bootstrap: str = "localhost:19092"
+    kafka_quotes_topic: str = "quotes.raw"
+    kafka_books_topic: str = "book.deltas"
+    archive_backend: str = "memory"  # memory | clickhouse
+    clickhouse_url: str = "http://localhost:8123"
+    clickhouse_database: str = "quant"
+    otel_enabled: bool = True
+    enable_l2_books: bool = True
+    l2_depth: int = 20
+    usdt_usd_basis: float = 1.0
+    clock_stale_ms: float = 250.0
+
     model_config = SettingsConfigDict(env_file=("../../.env", ".env"), extra="ignore")
+
+    def resolved_market_mode(self) -> str:
+        mode = self.market_mode.lower().strip()
+        if mode == "shadow":
+            return "live"
+        if mode in {"live", "live-public-data", "live_public_data"}:
+            return "live"
+        return "simulator"
+
+    def resolved_execution_mode(self) -> str:
+        if self.market_mode.lower().strip() == "shadow":
+            return "shadow"
+        mode = self.execution_mode.lower().strip()
+        if mode not in {"paper", "shadow", "live"}:
+            return "paper"
+        return mode
 
     @property
     def symbol_list(self):
@@ -65,5 +101,14 @@ class Settings(BaseSettings):
     @property
     def native_execution(self):
         return self.execution_engine.lower() in {"cpp", "rust"}
+
+    @property
+    def sends_orders(self) -> bool:
+        return self.resolved_execution_mode() == "paper" and self.paper_auto_execute
+
+    @property
+    def is_shadow(self) -> bool:
+        return self.resolved_execution_mode() == "shadow"
+
 
 settings = Settings()

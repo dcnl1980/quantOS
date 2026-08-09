@@ -9,6 +9,7 @@ services:
     volumes:
       - quant_pg:/var/lib/postgresql/data
       - ./infra/postgres/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+      - ./infra/postgres/002_instruments.sql:/docker-entrypoint-initdb.d/002_instruments.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U quant -d quant"]
       interval: 3s
@@ -35,6 +36,12 @@ services:
       EXECUTION_ENGINE: cpp
       EXECUTION_ENGINE_HOST: execution-cpp
       EXECUTION_ENGINE_PORT: 9100
+      DATA_PLANE_ENABLED: ${DATA_PLANE_ENABLED:-true}
+      BUS_BACKEND: ${BUS_BACKEND:-memory}
+      ARCHIVE_BACKEND: ${ARCHIVE_BACKEND:-memory}
+      OTEL_ENABLED: ${OTEL_ENABLED:-true}
+      EXECUTION_MODE: ${EXECUTION_MODE:-paper}
+      ENABLE_L2_BOOKS: ${ENABLE_L2_BOOKS:-true}
     ports: ["8000:8000"]
     depends_on:
       postgres:

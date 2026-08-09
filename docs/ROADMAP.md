@@ -4,9 +4,10 @@
 Live Binance/Coinbase feeds, simulator, normalized market state, arbitrage + lead/lag, cost model, risk,
 paper execution, P&L, backtest, persistence, API/WebSocket, dashboard, Docker and tests.
 
-## H1 data plane
-Redpanda/Kafka, ClickHouse raw tick archive, full L2 orderbooks with gap recovery, NTP/PTP telemetry,
-instrument registry, USD/USDT basis model, OpenTelemetry.
+## H1 data plane (implemented)
+Shadow execution mode, Redpanda/Kafka bus, ClickHouse raw tick archive, full L2 orderbooks with gap
+recovery, clock skew telemetry, instrument registry, USD/USDT basis model, OpenTelemetry spans.
+See `docs/H1_DATA_PLANE.md`.
 
 ## H2 execution
 Venue testnets, authenticated brokers, user/order streams, idempotent order state machine, cancel/replace,

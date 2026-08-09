@@ -34,4 +34,25 @@ LIVE_VENUES=binance,coinbase
 
 Then restart.
 
+## Shadow mode (observe only, no orders)
+
+```env
+MARKET_MODE=shadow
+```
+
+or:
+
+```env
+MARKET_MODE=live
+EXECUTION_MODE=shadow
+```
+
+## H1 data plane (Redpanda + ClickHouse)
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.h1.yml up --build
+```
+
+See `docs/H1_DATA_PLANE.md`.
+
 Read `README.md` and `docs/VALIDATION.md` before enabling any future authenticated venue router.

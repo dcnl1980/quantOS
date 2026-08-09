@@ -49,6 +49,14 @@ ExecResult ExecutionEngine::reject(const std::string& reason, std::uint64_t late
 }
 
 ExecResult ExecutionEngine::execute_arbitrage(const ExecRequest& req) {
+    return decide_arbitrage(req, true);
+}
+
+ExecResult ExecutionEngine::evaluate_arbitrage(const ExecRequest& req) {
+    return decide_arbitrage(req, false);
+}
+
+ExecResult ExecutionEngine::decide_arbitrage(const ExecRequest& req, bool commit) {
     const auto started = std::chrono::steady_clock::now();
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -60,28 +68,43 @@ ExecResult ExecutionEngine::execute_arbitrage(const ExecRequest& req) {
         );
     };
 
-    if (halted_) return reject("circuit_breaker_halted", elapsed());
+    // Shadow/eval path must not trip the circuit breaker or mutate counters.
+    auto soft_reject = [&](const std::string& reason) {
+        if (commit) return reject(reason, elapsed());
+        ExecResult r;
+        r.allowed = false;
+        r.reason = reason;
+        r.realized_pnl = realized_pnl_;
+        r.equity = cash_;
+        r.drawdown_pct = peak_equity_ > 0
+            ? std::max(0.0, (peak_equity_ - cash_) / peak_equity_ * 100.0) : 0.0;
+        r.latency_ns = elapsed();
+        r.trade_count = trade_count_;
+        return r;
+    };
+
+    if (halted_) return soft_reject("circuit_breaker_halted");
     if (!std::isfinite(req.buy_price) || !std::isfinite(req.sell_price) ||
         req.buy_price <= 0 || req.sell_price <= 0)
-        return reject("invalid_price", elapsed());
+        return soft_reject("invalid_price");
     if (req.sell_price <= req.buy_price)
-        return reject("non_positive_spread", elapsed());
+        return soft_reject("non_positive_spread");
     if (req.net_edge_bps < cfg_.min_net_edge_bps)
-        return reject("edge_below_minimum", elapsed());
+        return soft_reject("edge_below_minimum");
     if (req.slippage_bps > cfg_.max_slippage_bps)
-        return reject("slippage_above_maximum", elapsed());
+        return soft_reject("slippage_above_maximum");
     if (realized_pnl_ <= -cfg_.max_daily_loss)
-        return reject("daily_loss_limit", elapsed());
+        return soft_reject("daily_loss_limit");
 
     const double current_dd = peak_equity_ > 0
         ? std::max(0.0, (peak_equity_ - cash_) / peak_equity_ * 100.0) : 0.0;
     if (current_dd >= cfg_.max_drawdown_pct)
-        return reject("drawdown_limit", elapsed());
+        return soft_reject("drawdown_limit");
 
     double approved = std::min(req.desired_notional, cfg_.max_order_notional);
     if (req.max_notional > 0.0) approved = std::min(approved, req.max_notional);
     approved = std::min(approved, std::max(0.0, cash_ * 0.05));
-    if (approved <= 0.0) return reject("zero_approved_notional", elapsed());
+    if (approved <= 0.0) return soft_reject("zero_approved_notional");
 
     const double slip = req.slippage_bps / 10000.0;
     const double buy_exec = req.buy_price * (1.0 + slip);
@@ -93,15 +116,19 @@ ExecResult ExecutionEngine::execute_arbitrage(const ExecRequest& req) {
     const double sell_fee = sell_notional * req.sell_fee_bps / 10000.0;
     const double pnl = (sell_notional - buy_notional) - buy_fee - sell_fee;
 
-    cash_ += pnl;
-    realized_pnl_ += pnl;
-    peak_equity_ = std::max(peak_equity_, cash_);
-    turnover_ += buy_notional + sell_notional;
-    ++trade_count_;
+    if (commit) {
+        cash_ += pnl;
+        realized_pnl_ += pnl;
+        peak_equity_ = std::max(peak_equity_, cash_);
+        turnover_ += buy_notional + sell_notional;
+        ++trade_count_;
+        // Successful trade heals one transient rejection, but does not auto-resume a halted system.
+        if (rejection_count_ > 0) --rejection_count_;
+    }
 
     ExecResult r;
     r.allowed = true;
-    r.reason = "approved";
+    r.reason = commit ? "approved" : "shadow_approved";
     r.approved_notional = approved;
     r.quantity = qty;
     r.buy_exec_price = buy_exec;
@@ -109,15 +136,12 @@ ExecResult ExecutionEngine::execute_arbitrage(const ExecRequest& req) {
     r.buy_fee = buy_fee;
     r.sell_fee = sell_fee;
     r.trade_pnl = pnl;
-    r.realized_pnl = realized_pnl_;
-    r.equity = cash_;
+    r.realized_pnl = commit ? realized_pnl_ : (realized_pnl_ + pnl);
+    r.equity = commit ? cash_ : (cash_ + pnl);
     r.drawdown_pct = peak_equity_ > 0
-        ? std::max(0.0, (peak_equity_ - cash_) / peak_equity_ * 100.0) : 0.0;
+        ? std::max(0.0, (peak_equity_ - (commit ? cash_ : cash_ + pnl)) / peak_equity_ * 100.0) : 0.0;
     r.latency_ns = elapsed();
     r.trade_count = trade_count_;
-
-    // Successful trade heals one transient rejection, but does not auto-resume a halted system.
-    if (rejection_count_ > 0) --rejection_count_;
     return r;
 }
 
@@ -155,12 +179,13 @@ void ExecutionEngine::reset() {
     halted_ = false;
 }
 
-bool parse_exec_line(const std::string& line, ExecRequest& o, std::string& error) {
+bool parse_exec_line(const std::string& line, ExecRequest& o, std::string& error, bool* dry_run) {
     auto p = split(line, '|');
-    if (p.size() != 13 || p[0] != "EXEC_ARB") {
-        error = "expected EXEC_ARB with 12 fields";
+    if (p.size() != 13 || (p[0] != "EXEC_ARB" && p[0] != "EVAL_ARB")) {
+        error = "expected EXEC_ARB or EVAL_ARB with 12 fields";
         return false;
     }
+    if (dry_run) *dry_run = (p[0] == "EVAL_ARB");
     try {
         o.opportunity_id = p[1];
         o.symbol = p[2];

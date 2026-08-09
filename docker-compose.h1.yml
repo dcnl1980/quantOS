@@ -1,0 +1,73 @@
+# H1 data plane overlay: Redpanda + ClickHouse
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.h1.yml up --build
+services:
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.2.4
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 512M
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr
+      - internal://redpanda:9092,external://localhost:19092
+    ports:
+      - "19092:19092"
+      - "9644:9644"
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./infra/clickhouse/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - quant_ch:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8123/ping | grep -q Ok"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    environment:
+      DATA_PLANE_ENABLED: "true"
+      BUS_BACKEND: redpanda
+      KAFKA_BOOTSTRAP: redpanda:9092
+      ARCHIVE_BACKEND: clickhouse
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_DATABASE: quant
+      OTEL_ENABLED: "true"
+      ENABLE_L2_BOOKS: "true"
+      EXECUTION_MODE: ${EXECUTION_MODE:-paper}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      execution-cpp:
+        condition: service_started
+      redpanda:
+        condition: service_started
+      clickhouse:
+        condition: service_started
+
+volumes:
+  quant_ch:

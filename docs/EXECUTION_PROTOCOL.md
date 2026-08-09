@@ -48,6 +48,17 @@ EXEC_ARB|abc|BTCUSDT|binance|coinbase|118000|118400|20|5000|1000|10|12|2
 The engine independently applies its own risk controls, calculates the actual simulated execution prices,
 fees and paired P&L, mutates portfolio state and returns a JSON result.
 
+### Shadow / dry-run evaluate (no portfolio mutation)
+
+Same payload with `EVAL_ARB` instead of `EXEC_ARB`:
+
+```text
+EVAL_ARB|abc|BTCUSDT|binance|coinbase|118000|118400|20|5000|1000|10|12|2
+```
+
+Returns the same execution JSON shape (`reason` is `shadow_approved` when allowed) but does **not**
+mutate cash, trade count, turnover, or circuit-breaker rejection counters.
+
 ## Why the engine re-checks risk
 
 The Python strategy layer calculates expected edge, but the native engine is a second trust boundary.
