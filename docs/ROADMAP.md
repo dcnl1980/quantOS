@@ -9,9 +9,10 @@ Shadow execution mode, Redpanda/Kafka bus, ClickHouse raw tick archive, full L2 
 recovery, clock skew telemetry, instrument registry, USD/USDT basis model, OpenTelemetry spans.
 See `docs/H1_DATA_PLANE.md`.
 
-## H2 execution
-Venue testnets, authenticated brokers, user/order streams, idempotent order state machine, cancel/replace,
-partial-fill hedge policy, inventory allocator, fee tiers and reconciliation.
+## H2 execution (implemented)
+Venue testnet brokers, authenticated gateway, user/order streams, idempotent order state machine,
+cancel/replace, partial-fill hedge policy, inventory allocator, fee tiers and reconciliation.
+See `docs/H2_EXECUTION.md`.
 
 ## H3 research
 Walk-forward validation, Monte Carlo perturbation, experiment registry, parameter sensitivity,

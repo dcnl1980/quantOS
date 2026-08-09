@@ -11,7 +11,15 @@ class PaperBroker:
     def execute(self,o):
         rate=self.fees_bps.get(o.venue,10)/10000; slip=self.slippage_bps/10000
         px=o.price*(1+slip if o.side==Side.BUY else 1-slip)
-        n=px*o.quantity; fee=n*rate
+        fee=px*o.quantity*rate
+        return self._apply(o, px, fee)
+
+    def apply_external_fill(self, o, price, fee):
+        """Ledger a venue-reported fill without re-applying local slippage/fees."""
+        return self._apply(o, price, fee)
+
+    def _apply(self, o, px, fee):
+        n=px*o.quantity
         signed=o.quantity if o.side==Side.BUY else -o.quantity
         old=self.positions_qty[o.symbol]; cost=self.positions_cost[o.symbol]
         self.cash += (-n-fee if o.side==Side.BUY else n-fee)

@@ -16,6 +16,10 @@ from quant_os.instrument_registry import InstrumentRegistry
 from quant_os.basis import BasisModel
 from quant_os.clock_telemetry import ClockTelemetry
 from quant_os.orderbook import OrderBookRegistry
+from quant_os.fee_tiers import FeeSchedule
+from quant_os.inventory import InventoryAllocator
+from quant_os.hedge import PartialFillHedgePolicy
+from quant_os.live_broker import LiveBroker, LiveTradingDisabled
 
 from .config import settings
 from .events import EventBus
@@ -26,6 +30,7 @@ from .adapters.coinbase import CoinbaseTickerAdapter
 from .adapters.binance_depth import BinanceDepthAdapter
 from .db import persist_opportunity, persist_fill
 from .dataplane import build_bus, build_archive, build_telemetry
+from .execution import ExecutionGateway
 
 
 class QuantRuntime:
@@ -88,11 +93,48 @@ class QuantRuntime:
         )
         self.telemetry = build_telemetry(settings.otel_enabled)
 
+        self.fee_schedule = FeeSchedule.default()
+        self.fee_schedule.set_volume("binance", settings.fee_tier_volume_binance)
+        self.fee_schedule.set_volume("coinbase", settings.fee_tier_volume_coinbase)
+        self.inventory = InventoryAllocator(
+            total_capital=settings.initial_cash,
+            venue_weights=settings.inventory_weights,
+        )
+        self.gateway = ExecutionGateway(
+            risk=self.risk,
+            fee_schedule=self.fee_schedule,
+            inventory=self.inventory,
+            publish=self.bus.publish,
+            hedge=PartialFillHedgePolicy(min_hedge_qty=settings.min_hedge_qty),
+            partial_fill_ratio=settings.testnet_partial_fill_ratio,
+        )
+        self.live_broker_error: str | None = None
+
     async def start(self):
         await self.data_bus.start()
         await self.archive.start()
 
-        if self.native:
+        mode = settings.resolved_execution_mode()
+        if mode == "live":
+            try:
+                LiveBroker(
+                    settings.enable_live_trading,
+                    settings.live_trading_ack,
+                    testnet_validated=False,
+                )
+            except (LiveTradingDisabled, NotImplementedError) as exc:
+                self.live_broker_error = str(exc)
+
+        if mode == "testnet":
+            venues = settings.testnet_venue_list or ["sim_a", "sim_b"]
+            await self.gateway.start(
+                venues,
+                settings.testnet_api_key,
+                settings.testnet_api_secret,
+            )
+
+        # Native engine is the paper/shadow hot path. Testnet uses the H2 gateway instead.
+        if self.native and mode != "testnet":
             last_error = None
             for _ in range(30):
                 try:
@@ -135,6 +177,7 @@ class QuantRuntime:
         for t in self.tasks:
             t.cancel()
         await asyncio.gather(*self.tasks, return_exceptions=True)
+        await self.gateway.stop()
         await self.archive.stop()
         await self.data_bus.stop()
         if self.native:
@@ -250,7 +293,7 @@ class QuantRuntime:
                         "data": {
                             "opportunity_id": op.id,
                             "allowed": False,
-                            "reason": "live_trading_not_enabled",
+                            "reason": self.live_broker_error or "live_trading_not_enabled",
                             "execution_mode": "live",
                         },
                     })
@@ -259,6 +302,9 @@ class QuantRuntime:
                     continue
                 if mode == "shadow":
                     await self.shadow_execute(op)
+                elif mode == "testnet":
+                    if settings.testnet_auto_execute:
+                        await self.testnet_execute(op)
                 elif settings.paper_auto_execute:
                     await self.paper_execute(op)
 
@@ -266,6 +312,38 @@ class QuantRuntime:
             for op in self.leadlag.scan(histories)[:1]:
                 self.opportunities.appendleft(op)
                 await self.bus.publish({"type": "analysis_opportunity", "data": op.to_dict()})
+
+    async def testnet_execute(self, op):
+        with self.telemetry.span("testnet_execute", opportunity_id=op.id, symbol=op.symbol):
+            # Prefer fee-tier taker rates for cost-aware detection on subsequent scans.
+            self.costs.venue_fee_bps = {
+                **settings.fees,
+                **{v: self.fee_schedule.taker_bps(v) for v in settings.testnet_venue_list},
+            }
+            portfolio = self.broker.snapshot(await self.marks())
+            before = len(self.gateway.fills)
+            result = await self.gateway.execute_arbitrage(
+                op, portfolio, settings.paper_order_notional, strategy=self.arb.name
+            )
+            if not result.get("ok"):
+                return
+            new_fills = list(self.gateway.fills)[before:]
+            for f in new_fills:
+                # Mirror venue fills into the local portfolio ledger for P&L/UI.
+                self.broker.apply_external_fill(
+                    OrderRequest(
+                        f.venue, f.symbol, f.side, f.quantity, f.price, f.strategy, f.opportunity_id,
+                    ),
+                    f.price,
+                    f.fee,
+                )
+                self.fills.append(f)
+                asyncio.create_task(persist_fill(f.to_dict()))
+            self.trade_count = self.gateway.trade_count
+            await self.bus.publish({
+                "type": "portfolio",
+                "data": asdict(self.broker.snapshot(await self.marks())),
+            })
 
     async def shadow_execute(self, op):
         with self.telemetry.span("shadow_execute", opportunity_id=op.id, symbol=op.symbol):
@@ -450,15 +528,17 @@ class QuantRuntime:
             })
 
     async def portfolio_snapshot(self):
-        if self.native:
+        if settings.is_testnet:
+            return asdict(self.broker.snapshot(await self.marks()))
+        if self.native and self.native_identity:
             return await self.native.snapshot()
         return asdict(self.broker.snapshot(await self.marks()))
 
     async def risk_snapshot(self):
-        if self.native:
-            s = await self.native.snapshot()
-            return {"halted": s["halted"], "rejections": s["rejection_count"]}
-        return {"halted": self.risk.halted, "rejections": self.risk.rejections}
+        if settings.is_testnet or not (self.native and self.native_identity):
+            return {"halted": self.risk.halted, "rejections": self.risk.rejections}
+        s = await self.native.snapshot()
+        return {"halted": s["halted"], "rejections": s["rejection_count"]}
 
     async def reset_circuit_breaker(self):
         if self.native:
@@ -475,10 +555,18 @@ class QuantRuntime:
             "execution_mode": settings.resolved_execution_mode(),
             "paper_trading": settings.resolved_execution_mode() == "paper",
             "shadow_trading": settings.is_shadow,
-            "execution_engine": self.native_identity or "python",
-            "execution_transport": "tcp-native" if self.native else "in-process",
+            "testnet_trading": settings.is_testnet,
+            "execution_engine": (
+                "testnet-gateway" if settings.is_testnet else (self.native_identity or "python")
+            ),
+            "execution_transport": (
+                "authenticated-testnet" if settings.is_testnet
+                else ("tcp-native" if self.native and self.native_identity else "in-process")
+            ),
             "execution": {
-                "engine": self.native_identity or "python",
+                "engine": (
+                    "testnet-gateway" if settings.is_testnet else (self.native_identity or "python")
+                ),
                 "last_latency_ns": self.engine_latencies_ns[-1] if self.engine_latencies_ns else 0,
                 "avg_latency_ns": (
                     int(sum(self.engine_latencies_ns) / len(self.engine_latencies_ns))
@@ -492,6 +580,8 @@ class QuantRuntime:
                 "opportunities": self.opportunity_count,
                 "trades": self.trade_count,
                 "shadow_trades": self.shadow_trade_count,
+                "hedges": self.gateway.hedge_count,
+                "open_orders": len(self.gateway.fsm.open_orders()),
             },
             "risk": risk,
             "portfolio": portfolio,
@@ -507,6 +597,11 @@ class QuantRuntime:
                 "bus": self.data_bus.stats(),
                 "archive": self.archive.stats(),
                 "telemetry": self.telemetry.stats(),
+            },
+            "execution_plane": self.gateway.snapshot() if settings.is_testnet else {
+                "enabled": False,
+                "mode": settings.resolved_execution_mode(),
+                "live_error": self.live_broker_error,
             },
             "instruments": self.registry.to_list(),
         }

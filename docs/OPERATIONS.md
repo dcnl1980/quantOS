@@ -5,7 +5,9 @@
 - live market data: real public WebSockets + paper fills (`MARKET_MODE=live`, `EXECUTION_MODE=paper`)
 - shadow: live or simulated markets, full risk decisions, **no orders / no portfolio mutation**
   - `EXECUTION_MODE=shadow`, or `MARKET_MODE=shadow` (forces live feeds + shadow execution)
-- live trading: not implemented by default (`ENABLE_LIVE_TRADING` + acknowledgement still required; broker stub)
+- testnet: authenticated testnet/simulated venue router with order FSM, hedges, reconciliation
+  - `EXECUTION_MODE=testnet` (see `docs/H2_EXECUTION.md`)
+- live trading: not implemented by default (`ENABLE_LIVE_TRADING` + acknowledgement + testnet promotion)
 
 ## Data plane
 - Default compose uses in-memory bus/archive so the product boots without Kafka/ClickHouse.
