@@ -23,6 +23,7 @@ See `docs/H3_RESEARCH.md`.
 Instrument/venue/underlying/settlement graph, prediction-market semantics, contradiction detection.
 See `docs/H4_ONTOLOGY.md`.
 
-## H5 AI copilot
+## H5 AI copilot (implemented)
 Strategy explanations, experiment planning, anomaly analysis, natural-language analytics and governed
 code generation. No direct bypass of risk or signing-key boundary.
+See `docs/H5_COPILOT.md`.

@@ -64,10 +64,17 @@ environment did not have a Docker daemon, so Kafka/ClickHouse were exercised via
 - FastAPI research endpoints e2e (`/research/*`)
 - Run: `make test` / `make e2e-h3`
 
-## H4 market ontology (this branch)
+## H4 market ontology
 - Graph edge-type coverage (listings, hedges, settlement, complements, detectors)
 - Prediction-market complement normalization
 - Contradiction detector (complement, dispersion, out-of-range)
 - Polymarket ontology bridge ingest
 - FastAPI ontology endpoints e2e (`/ontology/*`, `/market-graph`)
 - Run: `make test` / `make e2e-h4`
+
+## H5 AI copilot (this branch)
+- Policy refusals for risk bypass / live enablement / signing keys
+- Experiment planning, anomaly analysis, NL analytics intents
+- Governed codegen stub constraints
+- FastAPI copilot endpoints e2e (`/copilot/*`)
+- Run: `make test` / `make e2e-h5`

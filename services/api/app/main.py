@@ -18,7 +18,7 @@ async def lifespan(app):
     await runtime.stop()
 
 
-app = FastAPI(title=settings.app_name, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],
@@ -419,6 +419,85 @@ async def research_features():
 @app.get("/api/v1/research/governance")
 async def research_governance():
     return runtime.research.governor.snapshot()
+
+
+@app.get("/api/v1/copilot")
+async def copilot_plane():
+    return runtime.copilot.snapshot()
+
+
+@app.post("/api/v1/copilot/explain")
+async def copilot_explain(strategy_id: str = "cross_venue_arbitrage"):
+    research = runtime.research.snapshot()
+    metrics = {}
+    recent = (research.get("experiments") or {}).get("recent") or []
+    if recent:
+        metrics = recent[0].get("metrics") or {}
+    return runtime.copilot.explain_strategy(
+        strategy_id=strategy_id,
+        metrics=metrics,
+        governance=research.get("governance") or {},
+        opportunities=[o.to_dict() for o in list(runtime.opportunities)[:20]],
+    )
+
+
+@app.post("/api/v1/copilot/explain-fill")
+async def copilot_explain_fill(fill_id: str | None = None):
+    fills = list(runtime.fills)
+    if not fills:
+        return {"ok": False, "reason": "no_fills"}
+    fill = fills[-1].to_dict()
+    if fill_id:
+        match = next((f.to_dict() for f in fills if f.id == fill_id), None)
+        if not match:
+            return {"ok": False, "reason": "unknown_fill"}
+        fill = match
+    return runtime.copilot.explain_fill(fill)
+
+
+@app.post("/api/v1/copilot/plan-experiment")
+async def copilot_plan_experiment(
+    hypothesis: str,
+    strategy_id: str = "cross_venue_arbitrage",
+    focus: str = "edge_stability",
+):
+    return runtime.copilot.plan_experiment(
+        hypothesis=hypothesis,
+        strategy_id=strategy_id,
+        focus=focus,
+    )
+
+
+@app.post("/api/v1/copilot/analyze")
+async def copilot_analyze():
+    ctx = await runtime.copilot_context()
+    return runtime.copilot.analyze(
+        contradictions=ctx["contradictions"],
+        risk=ctx["risk"],
+        quotes=ctx["quotes"],
+        portfolio=ctx["portfolio"],
+    )
+
+
+@app.post("/api/v1/copilot/ask")
+async def copilot_ask(question: str):
+    ctx = await runtime.copilot_context()
+    return runtime.copilot.ask(question, context=ctx)
+
+
+@app.post("/api/v1/copilot/codegen")
+async def copilot_codegen(
+    name: str,
+    kind: str = "cross_venue_arbitrage",
+    hypothesis: str = "",
+    min_net_edge_bps: float = 8.0,
+):
+    return runtime.copilot.codegen(
+        name=name,
+        kind=kind,
+        hypothesis=hypothesis,
+        min_net_edge_bps=min_net_edge_bps,
+    )
 
 
 @app.get("/metrics")

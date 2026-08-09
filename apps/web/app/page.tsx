@@ -13,6 +13,7 @@ export default function Page(){
  const [bt,setBt]=useState<Obj|null>(null)
  const [research,setResearch]=useState<Obj|null>(null)
  const [ontology,setOntology]=useState<Obj|null>(null)
+ const [copilot,setCopilot]=useState<Obj|null>(null)
  useEffect(()=>{
   fetch(`${API}/api/v1/snapshot`).then(r=>r.json()).then(s=>{setSnap(s);setOps(s.opportunities||[]);setFills(s.fills||[]);setShadowFills(s.shadow_fills||[]);let q:Record<string,Obj>={};(s.quotes||[]).forEach((x:Obj)=>q[`${x.venue}:${x.symbol}`]=x);setQuotes(q)}).catch(()=>{})
   const ws=new WebSocket(API.replace(/^http/,'ws')+'/ws')
@@ -34,6 +35,7 @@ export default function Page(){
  async function backtest(){setBt({loading:true});const r=await fetch(`${API}/api/v1/backtest/demo?ticks=5000&notional=1000`,{method:'POST'});setBt(await r.json())}
  async function runResearch(){setResearch({loading:true});const r=await fetch(`${API}/api/v1/research/suite?ticks=2400&mc_runs=20&seed=7`,{method:'POST'});setResearch(await r.json())}
  async function runOntologyScan(){setOntology({loading:true});const r=await fetch(`${API}/api/v1/ontology/scan`,{method:'POST'});setOntology(await r.json())}
+ async function askCopilot(){setCopilot({loading:true});const r=await fetch(`${API}/api/v1/copilot/analyze`,{method:'POST'});setCopilot(await r.json())}
  return <main>
   <header><div><div className="eyebrow"><Radio size={14}/> QUANT INTELLIGENCE TERMINAL</div><h1>Quant OS</h1></div>
    <div className="status"><span className={connected?'dot live':'dot'}/>{connected?'LIVE STREAM':'RECONNECTING'}<span className="pill">{(snap.market_mode||snap.mode||'...').toUpperCase()}</span><span className="pill safe">{execLabel}</span></div></header>
@@ -53,9 +55,10 @@ export default function Page(){
    <Panel title={execMode==='SHADOW'?'Shadow Decision Log':execMode==='TESTNET'?'Testnet Execution Log':'Paper Execution Log'} right={`${(execMode==='SHADOW'?shadowFills:fills).length} rows`}><table><thead><tr><th>Time</th><th>Side</th><th>Venue</th><th>Symbol</th><th>Qty</th><th>Price</th></tr></thead>
    <tbody>{(execMode==='SHADOW'?shadowFills:fills).slice(0,10).map(f=><tr key={f.id}><td>{new Date(f.ts).toLocaleTimeString()}</td><td className={f.side==='buy'?'buy':'sell'}>{f.side.toUpperCase()}</td><td>{f.venue}</td><td>{f.symbol}</td><td>{num(f.quantity,6)}</td><td>{money(f.price)}</td></tr>)}</tbody></table></Panel>
    <Panel title="Strategy Lab" right="research"><div className="lab"><h3>Cross-venue arbitrage</h3><p>Replay backtests plus H3 walk-forward, Monte Carlo and promotion gates.</p>
-    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={backtest}>Run backtest</button><button onClick={runResearch}>Run research suite</button></div>
+    <div style={{display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={backtest}>Run backtest</button><button onClick={runResearch}>Run research suite</button><button onClick={askCopilot}>Copilot analyze</button></div>
     {bt&&!bt.loading&&<div className="result"><Metric l="Net P&L" v={money(bt.net_pnl)}/><Metric l="Trades" v={String(bt.traded)}/><Metric l="Win rate" v={`${bt.win_rate}%`}/><Metric l="Costs" v={money(bt.estimated_costs)}/></div>}
-    {research&&!research.loading&&<div className="result"><Metric l="OOS P&L" v={money(research.metrics?.oos_net_pnl)}/><Metric l="Stability" v={num(research.metrics?.stability_score,2)}/><Metric l="MC p05" v={money(research.metrics?.p05_net_pnl)}/><Metric l="Promote" v={research.promotion?.approved?'YES':'NO'}/></div>}</div></Panel>
+    {research&&!research.loading&&<div className="result"><Metric l="OOS P&L" v={money(research.metrics?.oos_net_pnl)}/><Metric l="Stability" v={num(research.metrics?.stability_score,2)}/><Metric l="MC p05" v={money(research.metrics?.p05_net_pnl)}/><Metric l="Promote" v={research.promotion?.approved?'YES':'NO'}/></div>}
+    {copilot&&!copilot.loading&&<div className="result"><Metric l="Findings" v={String(copilot.count||0)}/><Metric l="Top" v={(copilot.findings?.[0]?.kind||'none').toString()}/><Metric l="Advisory" v="YES"/><Metric l="Exec auth" v="NO"/></div>}</div></Panel>
   </section>
   <section className="grid footerGrid">
    <Panel title="Risk Guardrails"><div className="guards"><Guard a="Minimum net edge" b="8 bp"/><Guard a="Max order notional" b="$2,500"/><Guard a="Max daily loss" b="$3,000"/><Guard a="Max drawdown" b="5%"/><Guard a="Max slippage" b="15 bp"/><Guard a="Execution" b={execLabel}/><Guard a="USDT/USD basis" b={`${num(snap.basis?.basis_bps||0,1)} bp`}/><Guard a="Data plane" b={(snap.data_plane?.bus?.backend||'off').toString()}/><Guard a="Open orders" b={String(stats.open_orders||0)}/><Guard a="Experiments" b={String(snap.research?.experiments?.count||0)}/><Guard a="PM markets" b={String(snap.ontology?.prediction_markets?.count||0)}/><Guard a="Contradictions" b={String(snap.ontology?.contradictions?.count||ontology?.summary?.count||0)}/><Guard a="Strategy status" b={(snap.research?.governance?.statuses?.cross_venue_arbitrage||'candidate').toString()}/></div></Panel>
