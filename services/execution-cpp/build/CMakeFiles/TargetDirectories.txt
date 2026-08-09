@@ -1,5 +1,0 @@
-/workspace/services/execution-cpp/build/CMakeFiles/quant-execution.dir
-/workspace/services/execution-cpp/build/CMakeFiles/engine-tests.dir
-/workspace/services/execution-cpp/build/CMakeFiles/test.dir
-/workspace/services/execution-cpp/build/CMakeFiles/edit_cache.dir
-/workspace/services/execution-cpp/build/CMakeFiles/rebuild_cache.dir
