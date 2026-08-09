@@ -1,0 +1,19 @@
+services:
+  execution-rust:
+    build:
+      context: .
+      dockerfile: services/execution-rust/Dockerfile
+    env_file: .env
+    environment:
+      EXECUTION_ENGINE_PORT: 9100
+    ports: ["9101:9100"]
+    restart: unless-stopped
+
+  api:
+    environment:
+      EXECUTION_ENGINE: rust
+      EXECUTION_ENGINE_HOST: execution-rust
+      EXECUTION_ENGINE_PORT: 9100
+    depends_on:
+      execution-rust:
+        condition: service_started

@@ -34,6 +34,7 @@ export default function Page(){
    <Card icon={<BarChart3/>} label="Session P&L" value={money(pnl)} sub={`Drawdown ${num(p.drawdown_pct)}%`}/>
    <Card icon={<Zap/>} label="Opportunities" value={String(stats.opportunities||0)} sub={`${stats.trades||0} paired trades`}/>
    <Card icon={<ShieldCheck/>} label="Risk engine" value={snap.risk?.halted?'HALTED':'ARMED'} sub={`${snap.risk?.rejections||0} rejects`}/>
+   <Card icon={<Activity/>} label="Execution engine" value={(snap.execution_engine||'...').toUpperCase()} sub={`${num((snap.execution?.last_latency_ns||0)/1000,1)} µs last decision`}/>
   </section>
   <section className="grid mainGrid">
    <Panel title="Market Matrix" right={`${qs.length} streams`}><table><thead><tr><th>Symbol</th><th>Venue</th><th>Bid</th><th>Ask</th><th>Spread</th></tr></thead>

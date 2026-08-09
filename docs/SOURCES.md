@@ -15,3 +15,14 @@ Public market channel provides Level 2 market/orderbook/price/trade updates. Cor
 current asset IDs, so this repository leaves discovery + semantic mapping as an explicit extension rather than
 shipping stale hard-coded IDs.
 https://docs.polymarket.com/market-data/websocket/market-channel
+
+
+## Binance Spot Test Network
+Official testnet documentation confirms separate Spot Test Network REST/WebSocket facilities and test assets.
+`https://developers.binance.com/en/docs/products/spot/testnet/general-info`
+`https://developers.binance.com/en/docs/products/spot/testnet/rest-api`
+`https://developers.binance.com/en/docs/products/spot/testnet/web-socket-streams`
+
+## Rust runtime libraries
+The Rust engine uses Tokio for async TCP. The container builds from the official Rust image and runs Cargo tests
+before producing the release binary.

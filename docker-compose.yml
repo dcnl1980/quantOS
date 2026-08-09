@@ -15,6 +15,16 @@ services:
       timeout: 3s
       retries: 20
 
+  execution-cpp:
+    build:
+      context: .
+      dockerfile: services/execution-cpp/Dockerfile
+    env_file: .env
+    environment:
+      EXECUTION_ENGINE_PORT: 9100
+    ports: ["9100:9100"]
+    restart: unless-stopped
+
   api:
     build:
       context: .
@@ -22,10 +32,15 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://quant:quant@postgres:5432/quant
+      EXECUTION_ENGINE: cpp
+      EXECUTION_ENGINE_HOST: execution-cpp
+      EXECUTION_ENGINE_PORT: 9100
     ports: ["8000:8000"]
     depends_on:
       postgres:
         condition: service_healthy
+      execution-cpp:
+        condition: service_started
 
   web:
     build:
