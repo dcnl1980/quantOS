@@ -22,6 +22,7 @@ from quant_os.hedge import PartialFillHedgePolicy
 from quant_os.live_broker import LiveBroker, LiveTradingDisabled
 from quant_os.research import PromotionGate
 from quant_os.ontology import MarketOntology
+from quant_os.copilot import AICopilot
 
 from .config import settings
 from .events import EventBus
@@ -113,6 +114,7 @@ class QuantRuntime:
         )
         self.live_broker_error: str | None = None
         self.ontology = MarketOntology(self.registry, seed_demo_markets=True)
+        self.copilot = AICopilot()
         self.research = ResearchLab(
             fees=settings.fees,
             default_slippage_bps=settings.default_slippage_bps,
@@ -631,6 +633,19 @@ class QuantRuntime:
                 "live_error": self.live_broker_error,
             },
             "instruments": self.registry.to_list(),
+            "research": self.research.snapshot(),
+            "ontology": self.ontology.snapshot(),
+            "copilot": self.copilot.snapshot(),
+        }
+
+    async def copilot_context(self) -> dict:
+        scan = await self.ontology_scan()
+        return {
+            "contradictions": scan.get("contradictions") or [],
+            "risk": await self.risk_snapshot(),
+            "quotes": [q.to_dict() for q in await self.state.all_quotes()],
+            "portfolio": await self.portfolio_snapshot(),
+            "opportunities": [o.to_dict() for o in list(self.opportunities)[:50]],
             "research": self.research.snapshot(),
             "ontology": self.ontology.snapshot(),
         }

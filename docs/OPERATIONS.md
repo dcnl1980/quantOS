@@ -23,6 +23,8 @@ Candidates should pass `POST /api/v1/research/suite` (walk-forward + Monte Carlo
 before paper/shadow/testnet scale-up. See `docs/H3_RESEARCH.md`.
 Ontology scans (`POST /api/v1/ontology/scan`) should be reviewed for settlement/complement contradictions
 before promoting prediction-market linked strategies. See `docs/H4_ONTOLOGY.md`.
+Copilot advice (`/api/v1/copilot/*`) is advisory only — never treat it as authority to widen risk,
+enable live, or handle venue keys. See `docs/H5_COPILOT.md`.
 
 ## Deployment order
 persistence -> feeds -> freshness checks -> research gates -> strategies observe-only/shadow -> risk -> paper/testnet broker -> reconciliation checks -> UI.
