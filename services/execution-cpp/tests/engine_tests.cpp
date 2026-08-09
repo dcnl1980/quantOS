@@ -42,10 +42,24 @@ int main() {
     check(ok, "protocol parse failed");
     check(parsed.symbol == "BTCUSDT" && parsed.sell_price == 101, "protocol fields wrong");
 
+    bool dry = false;
+    ok = quant::parse_exec_line(
+        "EVAL_ARB|id|BTCUSDT|binance|coinbase|100|101|50|5000|1000|10|12|2",
+        parsed, error, &dry
+    );
+    check(ok && dry, "EVAL_ARB parse failed");
+
     engine.reset_circuit_breaker();
     engine.reset();
     check(engine.snapshot().trade_count == 0, "reset trade count failed");
     check(std::abs(engine.snapshot().equity - 100000.0) < 1e-9, "reset equity failed");
+
+    r.net_edge_bps = 50;
+    auto shadow = engine.evaluate_arbitrage(r);
+    check(shadow.allowed, "shadow evaluate should approve");
+    check(shadow.reason == "shadow_approved", "shadow reason");
+    check(engine.snapshot().trade_count == 0, "shadow must not mutate trade count");
+    check(std::abs(engine.snapshot().equity - 100000.0) < 1e-9, "shadow must not mutate equity");
 
     std::cout << "engine-tests: OK\n";
     return 0;

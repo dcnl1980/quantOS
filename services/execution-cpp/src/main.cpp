@@ -62,8 +62,9 @@ static void client_loop(int fd, ExecutionEngine& engine) {
             else if (line == "RESET") { engine.reset(); response = "{\"type\":\"reset\",\"ok\":true}"; }
             else if (line == "RESET_CB") { engine.reset_circuit_breaker(); response = "{\"type\":\"reset_cb\",\"ok\":true}"; }
             else {
-                ExecRequest req; std::string err;
-                if (!quant::parse_exec_line(line, req, err)) response = error_json(err);
+                ExecRequest req; std::string err; bool dry_run = false;
+                if (!quant::parse_exec_line(line, req, err, &dry_run)) response = error_json(err);
+                else if (dry_run) response = quant::result_json(engine.evaluate_arbitrage(req));
                 else response = quant::result_json(engine.execute_arbitrage(req));
             }
             response.push_back('\n');

@@ -5,17 +5,33 @@
   "alternative_execution_engine": "Rust/Tokio",
   "market_modes": [
     "simulator",
-    "live-public-data"
+    "live-public-data",
+    "shadow"
   ],
-  "execution_mode": "paper by default",
+  "execution_modes": [
+    "paper",
+    "shadow",
+    "live (blocked stub)"
+  ],
+  "execution_mode_default": "paper",
   "components": {
     "frontend": "Next.js",
     "api": "FastAPI",
-    "native_cpp": "C++20 TCP execution/risk/portfolio service",
-    "native_rust": "Rust/Tokio protocol-compatible execution/risk/portfolio service",
+    "native_cpp": "C++20 TCP execution/risk/portfolio service with EVAL_ARB shadow dry-run",
+    "native_rust": "Rust/Tokio protocol-compatible execution/risk/portfolio service with EVAL_ARB",
     "database": "PostgreSQL",
+    "data_plane": [
+      "Redpanda/Kafka bus",
+      "ClickHouse tick archive",
+      "L2 orderbooks with gap recovery",
+      "instrument registry",
+      "USD/USDT basis",
+      "clock telemetry",
+      "OpenTelemetry"
+    ],
     "market_feeds": [
       "Binance Spot public WebSocket",
+      "Binance L2 depth WebSocket",
       "Coinbase Advanced Trade public WebSocket",
       "simulator"
     ],

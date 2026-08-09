@@ -65,11 +65,14 @@ class ExecutionEngine {
 public:
     explicit ExecutionEngine(RiskConfig cfg);
     ExecResult execute_arbitrage(const ExecRequest& req);
+    // Dry-run risk + hypothetical fill math; never mutates portfolio state.
+    ExecResult evaluate_arbitrage(const ExecRequest& req);
     Snapshot snapshot() const;
     void reset();
     void reset_circuit_breaker();
 
 private:
+    ExecResult decide_arbitrage(const ExecRequest& req, bool commit);
     ExecResult reject(const std::string& reason, std::uint64_t latency_ns);
     RiskConfig cfg_;
     mutable std::mutex mutex_;
@@ -84,6 +87,7 @@ private:
 
 std::string result_json(const ExecResult& r);
 std::string snapshot_json(const Snapshot& s);
-bool parse_exec_line(const std::string& line, ExecRequest& out, std::string& error);
+// Accepts EXEC_ARB|... or EVAL_ARB|... (same payload). Sets dry_run when EVAL_ARB.
+bool parse_exec_line(const std::string& line, ExecRequest& out, std::string& error, bool* dry_run = nullptr);
 
 } // namespace quant

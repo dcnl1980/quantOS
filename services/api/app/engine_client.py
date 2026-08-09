@@ -70,16 +70,17 @@ class NativeExecutionClient:
     async def reset_circuit_breaker(self):
         return await self._request("RESET_CB")
 
-    async def execute_arbitrage(
+    def _arb_line(
         self,
+        command: str,
         opportunity,
         desired_notional: float,
         fees: dict[str, float],
         slippage_bps: float,
-    ):
+    ) -> str:
         clean = lambda s: str(s).replace("|", "_").replace("\n", "_")
         fields = [
-            "EXEC_ARB",
+            command,
             clean(opportunity.id),
             clean(opportunity.symbol),
             clean(opportunity.buy_venue),
@@ -93,4 +94,26 @@ class NativeExecutionClient:
             f"{fees.get(opportunity.sell_venue, 10.0):.12f}",
             f"{slippage_bps:.12f}",
         ]
-        return await self._request("|".join(fields))
+        return "|".join(fields)
+
+    async def execute_arbitrage(
+        self,
+        opportunity,
+        desired_notional: float,
+        fees: dict[str, float],
+        slippage_bps: float,
+    ):
+        return await self._request(
+            self._arb_line("EXEC_ARB", opportunity, desired_notional, fees, slippage_bps)
+        )
+
+    async def evaluate_arbitrage(
+        self,
+        opportunity,
+        desired_notional: float,
+        fees: dict[str, float],
+        slippage_bps: float,
+    ):
+        return await self._request(
+            self._arb_line("EVAL_ARB", opportunity, desired_notional, fees, slippage_bps)
+        )

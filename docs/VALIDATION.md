@@ -37,6 +37,15 @@ cargo test --release
 cargo build --release
 ```
 
-The artifact build environment used to generate this ZIP did not contain a Rust toolchain or Docker daemon, so the
-Rust target could not be compiled locally during packaging. The default product path is therefore the independently
-compiled and smoke-tested C++20 engine.
+Local validation for this branch also ran `cargo test --release` including the shadow `EVAL_ARB` non-mutation test.
+
+## Shadow + H1 (this branch)
+- Python suite: `make test` (core + H1 units + async e2e) — 15 passed
+- C++ CTest including shadow evaluate — passed
+- Rust unit tests including shadow evaluate — passed
+- FastAPI TestClient e2e (`EXECUTION_MODE=shadow`, simulator feeds): shadow trades > 0, paper trades = 0,
+  portfolio equity unchanged, data-plane bus/archive/telemetry populated
+- Native TCP smoke: `EVAL_ARB` does not mutate snapshot; `EXEC_ARB` does
+
+Docker Compose H1 overlay (`redpanda` + `clickhouse`) is provided in `docker-compose.h1.yml`; this validation
+environment did not have a Docker daemon, so Kafka/ClickHouse were exercised via in-memory backends.

@@ -38,32 +38,37 @@ impl Engine {
                "drawdown_pct":dd,"positions":{},"venue_exposure":{},"trade_count":self.trades,
                "rejection_count":self.rejects,"halted":self.halted,"turnover":self.turnover})
     }
-    fn reject(&mut self, reason: &str, started: Instant) -> serde_json::Value {
-        self.rejects += 1;
-        if self.rejects >= self.cfg.max_rejections { self.halted = true; }
+    fn reject(&mut self, reason: &str, started: Instant, commit: bool) -> serde_json::Value {
+        if commit {
+            self.rejects += 1;
+            if self.rejects >= self.cfg.max_rejections { self.halted = true; }
+        }
         let dd = if self.peak > 0.0 { ((self.peak-self.cash)/self.peak*100.0).max(0.0) } else {0.0};
         json!({"type":"execution","allowed":false,"reason":reason,"approved_notional":0.0,
                "quantity":0.0,"buy_exec_price":0.0,"sell_exec_price":0.0,"buy_fee":0.0,"sell_fee":0.0,
                "trade_pnl":0.0,"realized_pnl":self.realized,"equity":self.cash,"drawdown_pct":dd,
                "latency_ns":started.elapsed().as_nanos() as u64,"trade_count":self.trades})
     }
-    fn execute(&mut self, p: &[&str]) -> serde_json::Value {
+    fn decide(&mut self, p: &[&str], commit: bool) -> serde_json::Value {
         let started=Instant::now();
-        if p.len()!=13 || p[0]!="EXEC_ARB" { return json!({"type":"error","error":"expected EXEC_ARB with 12 fields"}); }
+        let cmd = p.first().copied().unwrap_or("");
+        if p.len()!=13 || (cmd!="EXEC_ARB" && cmd!="EVAL_ARB") {
+            return json!({"type":"error","error":"expected EXEC_ARB or EVAL_ARB with 12 fields"});
+        }
         let nums: Result<Vec<f64>,_> = [5usize,6,7,8,9,10,11,12].iter().map(|&i| p[i].parse::<f64>()).collect();
         let n=match nums { Ok(v)=>v, Err(_)=>return json!({"type":"error","error":"invalid numeric field"}) };
         let (buy,sell,edge,maxn,desired,bfee,sfee,slip)=(n[0],n[1],n[2],n[3],n[4],n[5],n[6],n[7]);
-        if self.halted { return self.reject("circuit_breaker_halted",started); }
-        if !buy.is_finite() || !sell.is_finite() || buy<=0.0 || sell<=buy { return self.reject("invalid_or_non_positive_spread",started); }
-        if edge<self.cfg.min_edge { return self.reject("edge_below_minimum",started); }
-        if slip>self.cfg.max_slippage { return self.reject("slippage_above_maximum",started); }
-        if self.realized<=-self.cfg.max_daily_loss { return self.reject("daily_loss_limit",started); }
+        if self.halted { return self.reject("circuit_breaker_halted",started,commit); }
+        if !buy.is_finite() || !sell.is_finite() || buy<=0.0 || sell<=buy { return self.reject("invalid_or_non_positive_spread",started,commit); }
+        if edge<self.cfg.min_edge { return self.reject("edge_below_minimum",started,commit); }
+        if slip>self.cfg.max_slippage { return self.reject("slippage_above_maximum",started,commit); }
+        if self.realized<=-self.cfg.max_daily_loss { return self.reject("daily_loss_limit",started,commit); }
         let dd=if self.peak>0.0 { ((self.peak-self.cash)/self.peak*100.0).max(0.0) } else {0.0};
-        if dd>=self.cfg.max_drawdown { return self.reject("drawdown_limit",started); }
+        if dd>=self.cfg.max_drawdown { return self.reject("drawdown_limit",started,commit); }
 
         let mut approved=desired.min(self.cfg.max_notional).min(self.cash.max(0.0)*0.05);
         if maxn>0.0 { approved=approved.min(maxn); }
-        if approved<=0.0 { return self.reject("zero_approved_notional",started); }
+        if approved<=0.0 { return self.reject("zero_approved_notional",started,commit); }
 
         let sr=slip/10000.0;
         let buy_exec=buy*(1.0+sr); let sell_exec=sell*(1.0-sr);
@@ -71,15 +76,23 @@ impl Engine {
         let bn=qty*buy_exec; let sn=qty*sell_exec;
         let bf=bn*bfee/10000.0; let sf=sn*sfee/10000.0;
         let pnl=sn-bn-bf-sf;
-        self.cash+=pnl; self.realized+=pnl; self.peak=self.peak.max(self.cash);
-        self.turnover+=bn+sn; self.trades+=1; if self.rejects>0 {self.rejects-=1;}
-        let dd=if self.peak>0.0 { ((self.peak-self.cash)/self.peak*100.0).max(0.0) } else {0.0};
-        json!({"type":"execution","allowed":true,"reason":"approved","approved_notional":approved,
+        let equity = if commit { self.cash + pnl } else { self.cash + pnl };
+        let realized = if commit { self.realized + pnl } else { self.realized + pnl };
+        if commit {
+            self.cash+=pnl; self.realized+=pnl; self.peak=self.peak.max(self.cash);
+            self.turnover+=bn+sn; self.trades+=1; if self.rejects>0 {self.rejects-=1;}
+        }
+        let dd=if self.peak>0.0 { ((self.peak-(if commit {self.cash} else {equity}))/self.peak*100.0).max(0.0) } else {0.0};
+        json!({"type":"execution","allowed":true,"reason": if commit {"approved"} else {"shadow_approved"},
+               "approved_notional":approved,
                "quantity":qty,"buy_exec_price":buy_exec,"sell_exec_price":sell_exec,
-               "buy_fee":bf,"sell_fee":sf,"trade_pnl":pnl,"realized_pnl":self.realized,
-               "equity":self.cash,"drawdown_pct":dd,"latency_ns":started.elapsed().as_nanos() as u64,
+               "buy_fee":bf,"sell_fee":sf,"trade_pnl":pnl,"realized_pnl": if commit {self.realized} else {realized},
+               "equity": if commit {self.cash} else {equity},"drawdown_pct":dd,
+               "latency_ns":started.elapsed().as_nanos() as u64,
                "trade_count":self.trades})
     }
+    fn execute(&mut self, p: &[&str]) -> serde_json::Value { self.decide(p, true) }
+    fn evaluate(&mut self, p: &[&str]) -> serde_json::Value { self.decide(p, false) }
     fn reset(&mut self) {
         self.cash=self.cfg.initial_cash; self.realized=0.0; self.peak=self.cfg.initial_cash;
         self.turnover=0.0; self.trades=0; self.rejects=0; self.halted=false;
@@ -95,7 +108,11 @@ async fn client(stream:TcpStream, engine:Arc<Mutex<Engine>>) {
         else if line=="SNAPSHOT" { engine.lock().await.snapshot() }
         else if line=="RESET" { engine.lock().await.reset(); json!({"type":"reset","ok":true}) }
         else if line=="RESET_CB" { let mut e=engine.lock().await; e.rejects=0; e.halted=false; json!({"type":"reset_cb","ok":true}) }
-        else { let parts:Vec<&str>=line.split('|').collect(); engine.lock().await.execute(&parts) };
+        else {
+            let parts:Vec<&str>=line.split('|').collect();
+            let mut e=engine.lock().await;
+            if parts.first().copied()==Some("EVAL_ARB") { e.evaluate(&parts) } else { e.execute(&parts) }
+        };
         if w.write_all(format!("{}\n",response).as_bytes()).await.is_err(){break;}
     }
 }
@@ -133,5 +150,16 @@ mod tests {
         let v2=e.execute(&p2);
         assert_eq!(v2["allowed"], false);
         assert_eq!(v2["reason"], "edge_below_minimum");
+    }
+
+    #[test]
+    fn shadow_evaluate_does_not_mutate() {
+        let mut e=Engine::new(cfg());
+        let p=["EVAL_ARB","id","BTCUSDT","a","b","100","101","50","10000","5000","5","5","2"];
+        let v=e.evaluate(&p);
+        assert_eq!(v["allowed"], true);
+        assert_eq!(v["reason"], "shadow_approved");
+        assert_eq!(e.trades, 0);
+        assert!((e.cash - 100000.0).abs() < 1e-9);
     }
 }

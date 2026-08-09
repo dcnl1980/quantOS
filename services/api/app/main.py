@@ -1,47 +1,107 @@
-import math,random
+import math
+import random
 from contextlib import asynccontextmanager
-from datetime import datetime,timezone,timedelta
-from fastapi import FastAPI,WebSocket,WebSocketDisconnect
+from datetime import datetime, timezone, timedelta
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
-from prometheus_client import generate_latest,CONTENT_TYPE_LATEST
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from quant_os.models import Quote
 from quant_os.backtest import ArbitrageBacktester
+
 from .config import settings
 from .runtime import runtime
 from .db import ping_db
 
+
 @asynccontextmanager
 async def lifespan(app):
-    await runtime.start();yield;await runtime.stop()
+    await runtime.start()
+    yield
+    await runtime.stop()
 
-app=FastAPI(title=settings.app_name,version="0.1.0",lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],allow_credentials=True,allow_methods=["*"],allow_headers=["*"])
+
+app = FastAPI(title=settings.app_name, version="0.2.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 async def root():
     return {
         "name": settings.app_name,
+        "market_mode": settings.resolved_market_mode(),
+        "execution_mode": settings.resolved_execution_mode(),
         "mode": settings.market_mode,
         "execution_engine": settings.execution_engine,
-        "paper_trading": True,
+        "paper_trading": settings.resolved_execution_mode() == "paper",
+        "shadow_trading": settings.is_shadow,
         "live_trading_enabled": settings.enable_live_trading,
+        "data_plane_enabled": settings.data_plane_enabled,
         "docs": "/docs",
     }
+
+
 @app.get("/health")
-async def health():return {"ok":True,"mode":settings.market_mode}
+async def health():
+    return {
+        "ok": True,
+        "market_mode": settings.resolved_market_mode(),
+        "execution_mode": settings.resolved_execution_mode(),
+    }
+
+
 @app.get("/ready")
-async def ready():return {"ok":True,"database":await ping_db(),"feed_tasks":len(runtime.tasks)}
+async def ready():
+    return {
+        "ok": True,
+        "database": await ping_db(),
+        "feed_tasks": len(runtime.tasks),
+        "data_plane": runtime.data_bus.stats(),
+    }
+
+
 @app.get("/api/v1/snapshot")
-async def snapshot():return await runtime.snapshot()
+async def snapshot():
+    return await runtime.snapshot()
+
+
 @app.get("/api/v1/quotes")
-async def quotes():return [q.to_dict() for q in await runtime.state.all_quotes()]
+async def quotes():
+    return [q.to_dict() for q in await runtime.state.all_quotes()]
+
+
 @app.get("/api/v1/opportunities")
-async def opportunities(limit:int=50):return [o.to_dict() for o in list(runtime.opportunities)[:max(1,min(limit,500))]]
+async def opportunities(limit: int = 50):
+    return [o.to_dict() for o in list(runtime.opportunities)[: max(1, min(limit, 500))]]
+
+
 @app.get("/api/v1/portfolio")
-async def portfolio():return (await runtime.snapshot())["portfolio"]
+async def portfolio():
+    return (await runtime.snapshot())["portfolio"]
+
+
 @app.get("/api/v1/fills")
-async def fills(limit:int=100):return [f.to_dict() for f in runtime.broker.fills[-max(1,min(limit,1000)):]][::-1]
+async def fills(limit: int = 100):
+    n = max(1, min(limit, 1000))
+    native = [f.to_dict() for f in list(runtime.fills)[-n:]][::-1]
+    if native:
+        return native
+    return [f.to_dict() for f in runtime.broker.fills[-n:]][::-1]
+
+
+@app.get("/api/v1/shadow-fills")
+async def shadow_fills(limit: int = 100):
+    n = max(1, min(limit, 1000))
+    return [f.to_dict() for f in list(runtime.shadow_fills)[-n:]][::-1]
+
+
 @app.post("/api/v1/risk/reset-circuit-breaker")
 async def reset_cb():
     return await runtime.reset_circuit_breaker()
@@ -49,14 +109,17 @@ async def reset_cb():
 
 @app.get("/api/v1/strategies")
 async def strategies():
+    mode = settings.resolved_execution_mode()
     return [
         {
             "id": "cross_venue_arbitrage",
             "status": "active",
-            "auto_execute": settings.paper_auto_execute,
+            "auto_execute": mode == "paper" and settings.paper_auto_execute,
+            "shadow": mode == "shadow",
             "description": "Best-ask versus best-bid cross-venue dislocation after modeled fees and slippage.",
             "min_net_edge_bps": settings.min_net_edge_bps,
             "execution": settings.execution_engine,
+            "execution_mode": mode,
         },
         {
             "id": "lead_lag",
@@ -65,6 +128,7 @@ async def strategies():
             "description": "Short-window cross-venue lead/lag divergence. Analysis-only by design.",
         },
     ]
+
 
 @app.get("/api/v1/risk/config")
 async def risk_config():
@@ -78,7 +142,9 @@ async def risk_config():
         "max_slippage_bps": settings.max_slippage_bps,
         "circuit_breaker_rejections": settings.circuit_breaker_rejections,
         "min_execution_interval_ms": settings.min_execution_interval_ms,
+        "execution_mode": settings.resolved_execution_mode(),
     }
+
 
 @app.get("/api/v1/engine")
 async def engine_status():
@@ -87,6 +153,7 @@ async def engine_status():
             "configured": settings.execution_engine,
             "identity": runtime.native_identity,
             "transport": "persistent-private-tcp",
+            "execution_mode": settings.resolved_execution_mode(),
             "health": await runtime.native.ping(),
             "portfolio": await runtime.native.snapshot(),
         }
@@ -94,48 +161,111 @@ async def engine_status():
         "configured": "python",
         "identity": "python",
         "transport": "in-process",
+        "execution_mode": settings.resolved_execution_mode(),
         "portfolio": await runtime.portfolio_snapshot(),
     }
 
+
 @app.get("/api/v1/market-graph")
 async def market_graph():
-    quotes = await runtime.state.all_quotes()
-    nodes = {}
-    edges = []
-    for q in quotes:
+    base = runtime.registry.graph()
+    nodes = {n["id"]: n for n in base["nodes"]}
+    edges = list(base["edges"])
+    for q in await runtime.state.all_quotes():
         sid = f"symbol:{q.symbol}"
         vid = f"venue:{q.venue}"
-        nodes[sid] = {"id": sid, "type": "instrument", "label": q.symbol}
-        nodes[vid] = {"id": vid, "type": "venue", "label": q.venue}
-        edges.append({"source": sid, "target": vid, "type": "LISTED_ON"})
+        nodes.setdefault(sid, {"id": sid, "type": "instrument", "label": q.symbol})
+        nodes.setdefault(vid, {"id": vid, "type": "venue", "label": q.venue})
+        edges.append({"source": sid, "target": vid, "type": "LISTED_ON", "live": True})
     for op in list(runtime.opportunities)[:100]:
         if op.type.value != "cross_venue":
             continue
         a, b = f"venue:{op.buy_venue}", f"venue:{op.sell_venue}"
         edges.append({
-            "source": a, "target": b, "type": "ARBITRAGE_WITH",
-            "symbol": op.symbol, "net_edge_bps": op.net_edge_bps,
+            "source": a,
+            "target": b,
+            "type": "ARBITRAGE_WITH",
+            "symbol": op.symbol,
+            "net_edge_bps": op.net_edge_bps,
         })
+    basis = runtime.basis.to_dict()
+    edges.append({
+        "source": "currency:USDT",
+        "target": "currency:USD",
+        "type": "BASIS",
+        "usdt_usd": basis["usdt_usd"],
+        "basis_bps": basis["basis_bps"],
+    })
+    nodes.setdefault("currency:USDT", {"id": "currency:USDT", "type": "currency", "label": "USDT"})
+    nodes.setdefault("currency:USD", {"id": "currency:USD", "type": "currency", "label": "USD"})
     return {"nodes": list(nodes.values()), "edges": edges}
 
+
+@app.get("/api/v1/instruments")
+async def instruments():
+    return runtime.registry.to_list()
+
+
+@app.get("/api/v1/orderbooks")
+async def orderbooks():
+    return runtime.books.snapshot()
+
+
+@app.get("/api/v1/data-plane")
+async def data_plane():
+    return {
+        "enabled": settings.data_plane_enabled,
+        "bus": runtime.data_bus.stats(),
+        "archive": runtime.archive.stats(),
+        "telemetry": runtime.telemetry.stats(),
+        "clock": runtime.clock.snapshot(),
+        "basis": runtime.basis.to_dict(),
+        "recent_ticks": runtime.archive.recent_ticks(20),
+    }
+
+
+@app.get("/api/v1/basis")
+async def basis():
+    return runtime.basis.to_dict()
+
+
+@app.get("/api/v1/clock")
+async def clock():
+    return runtime.clock.snapshot()
+
+
 @app.post("/api/v1/backtest/demo")
-async def backtest(ticks:int=2000,notional:float=1000):
-    rng=random.Random(7);base=118000;batches=[]
-    for i in range(max(100,min(ticks,100000))):
-        base*=math.exp(rng.gauss(0,.00012));dis=rng.uniform(14,42) if rng.random()<.06 else rng.uniform(-1,1);now=datetime.now(timezone.utc)+timedelta(milliseconds=i*100)
-        def q(v,off):
-            mid=base*(1+off/10000);return Quote(v,"BTCUSDT",mid*.99995,mid*1.00005,2,2,now,now,i)
-        batches.append([q("sim_a",0),q("sim_b",dis)])
-    return ArbitrageBacktester(runtime.arb,notional).run(batches).to_dict()
+async def backtest(ticks: int = 2000, notional: float = 1000):
+    rng = random.Random(7)
+    base = 118000
+    batches = []
+    for i in range(max(100, min(ticks, 100000))):
+        base *= math.exp(rng.gauss(0, .00012))
+        dis = rng.uniform(14, 42) if rng.random() < .06 else rng.uniform(-1, 1)
+        now = datetime.now(timezone.utc) + timedelta(milliseconds=i * 100)
+
+        def q(v, off):
+            mid = base * (1 + off / 10000)
+            return Quote(v, "BTCUSDT", mid * .99995, mid * 1.00005, 2, 2, now, now, i)
+
+        batches.append([q("sim_a", 0), q("sim_b", dis)])
+    return ArbitrageBacktester(runtime.arb, notional).run(batches).to_dict()
+
 
 @app.get("/metrics")
-async def metrics():return PlainTextResponse(generate_latest().decode(),media_type=CONTENT_TYPE_LATEST)
+async def metrics():
+    return PlainTextResponse(generate_latest().decode(), media_type=CONTENT_TYPE_LATEST)
+
 
 @app.websocket("/ws")
-async def websocket(ws:WebSocket):
-    await ws.accept();q=runtime.bus.subscribe()
+async def websocket(ws: WebSocket):
+    await ws.accept()
+    q = runtime.bus.subscribe()
     try:
-        await ws.send_json({"type":"snapshot","data":await runtime.snapshot()})
-        while True:await ws.send_json(await q.get())
-    except WebSocketDisconnect:pass
-    finally:runtime.bus.unsubscribe(q)
+        await ws.send_json({"type": "snapshot", "data": await runtime.snapshot()})
+        while True:
+            await ws.send_json(await q.get())
+    except WebSocketDisconnect:
+        pass
+    finally:
+        runtime.bus.unsubscribe(q)

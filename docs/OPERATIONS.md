@@ -1,14 +1,20 @@
 # Operations
 
 ## Modes
-- simulator: synthetic market data + paper fills
-- live market data: real public WebSockets + paper fills
-- shadow: recommended next step; observe real markets/order states but send no orders
-- live: not implemented by default
+- simulator: synthetic market data + paper fills (`MARKET_MODE=simulator`, `EXECUTION_MODE=paper`)
+- live market data: real public WebSockets + paper fills (`MARKET_MODE=live`, `EXECUTION_MODE=paper`)
+- shadow: live or simulated markets, full risk decisions, **no orders / no portfolio mutation**
+  - `EXECUTION_MODE=shadow`, or `MARKET_MODE=shadow` (forces live feeds + shadow execution)
+- live trading: not implemented by default (`ENABLE_LIVE_TRADING` + acknowledgement still required; broker stub)
+
+## Data plane
+- Default compose uses in-memory bus/archive so the product boots without Kafka/ClickHouse.
+- H1 overlay: `docker compose -f docker-compose.yml -f docker-compose.h1.yml up --build`
+- Inspect: `GET /api/v1/data-plane`, `/api/v1/orderbooks`, `/api/v1/clock`, `/api/v1/basis`
 
 ## Alerts
 feed disconnect, stale quote, sequence gap, strategy silence, rejection spike, partial fill imbalance,
 reconciliation mismatch, drawdown, daily loss, clock drift and persistence lag.
 
 ## Deployment order
-persistence -> feeds -> freshness checks -> strategies observe-only -> risk -> paper broker -> reconciliation checks -> UI.
+persistence -> feeds -> freshness checks -> strategies observe-only/shadow -> risk -> paper broker -> reconciliation checks -> UI.
