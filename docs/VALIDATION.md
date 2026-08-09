@@ -2,64 +2,84 @@
 
 Generated product validation performed in the build environment.
 
-## Python
-- all Python files parsed successfully
-- core pytest suite: 5/5 passed
+## Claim under test
+
+All H0–H5 planes are functionally green locally:
+Python core + horizon e2e, C++ engine CTest, Rust unit tests, and native TCP smoke
+(`EVAL_ARB` non-mutating, `EXEC_ARB` mutating).
+
+## Python (H0–H5)
+
+Command:
+
+```bash
+make e2e-full
+# or
+PYTHONPATH=packages/quant:services/api pytest -q
+```
+
+Result: **49 passed**
+
+Coverage includes:
+
+| Horizon | Surfaces |
+|---|---|
+| H0 | arbitrage/costs/risk/paper/backtest units; `/`, `/health`, `/ready`, snapshot, quotes, opportunities, portfolio, fills, strategies, risk, engine, backtest, metrics |
+| H1 | orderbook/basis/clock/registry units; shadow non-mutation e2e; paper still executes; data-plane bus/archive/telemetry; instruments/basis/clock/orderbooks/shadow-fills |
+| H2 | order FSM, fees, inventory, hedge, recon units; testnet gateway e2e; live mode blocked without ack |
+| H3 | walk-forward/MC/sensitivity/features/experiments/gates; ResearchLab suite; `/research/*` API |
+| H4 | ontology graph edges, prediction complements, contradictions; `/ontology/*` + `/market-graph` |
+| H5 | policy refusals, plan/analyze/ask/codegen; `/copilot/*` |
+| Full | `tests/test_e2e_full_h0_h5.py` hits every plane in one API session |
+
+Makefile targets: `make e2e`, `e2e-h2`, `e2e-h3`, `e2e-h4`, `e2e-h5`, `e2e-full`, `validate`.
 
 ## C++20
-Compiler: GCC 14.2
-Build type: Release
+
+Compiler: GCC 14.2 / CMake Release
+
+```bash
+make cpp-test
+```
 
 - CMake configure: passed
 - native binary build: passed
-- CTest: passed
-- TCP PING: passed
-- SNAPSHOT: passed
-- positive paired paper execution: passed
-- portfolio mutation: passed
-- RESET: passed
-- 2,000-request local benchmark: passed
-
-One observed build-environment run produced approximately:
-- internal decision median: ~60 ns
-- internal decision p95: ~250 ns
-- localhost persistent TCP median RTT: ~0.40 ms
-- localhost persistent TCP p95 RTT: ~0.63 ms
-
-These figures are **not exchange latency benchmarks** and should not be used as expected production trading performance.
-They measure a tiny in-memory risk/execution calculation and local process-to-process TCP on the build host.
+- CTest `engine-tests`: passed
 
 ## Rust
-The Rust implementation is protocol-compatible in source and contains unit tests. Its Dockerfile runs:
 
-```text
-cargo test --release
-cargo build --release
+```bash
+make rust-test
 ```
 
-Local validation for this branch also ran `cargo test --release` including the shadow `EVAL_ARB` non-mutation test.
+- `shadow_evaluate_does_not_mutate`: passed
+- `executes_positive_arb_and_rejects_low_edge`: passed
 
-## Shadow + H1 (this branch)
-- Python suite: `make test` (core + H1 units + async e2e) — 15 passed
-- C++ CTest including shadow evaluate — passed
-- Rust unit tests including shadow evaluate — passed
-- FastAPI TestClient e2e (`EXECUTION_MODE=shadow`, simulator feeds): shadow trades > 0, paper trades = 0,
-  portfolio equity unchanged, data-plane bus/archive/telemetry populated
-- Native TCP smoke: `EVAL_ARB` does not mutate snapshot; `EXEC_ARB` does
+## Native TCP smoke
 
-Docker Compose H1 overlay (`redpanda` + `clickhouse`) is provided in `docker-compose.h1.yml`; this validation
-environment did not have a Docker daemon, so Kafka/ClickHouse were exercised via in-memory backends.
+```bash
+make native-smoke
+```
 
-## H2 execution plane
-- Order FSM, fee tiers, inventory, hedge policy, reconciler unit tests — passed
-- Simulated testnet broker idempotent place/cancel — passed
-- Gateway paired testnet trade + recon — passed
-- Runtime e2e `EXECUTION_MODE=testnet` — trades/hedges/fills/inventory populated
-- Live mode remains blocked without acknowledgement + testnet promotion
+Observed:
 
-## H3 research plane (this branch)
-- Walk-forward / Monte Carlo / sensitivity / feature store / experiment registry unit tests
-- Promotion gate pass/fail coverage
-- ResearchLab full suite e2e
-- FastAPI research endpoints e2e (`/research/*`)
-- Run: `make test` / `make e2e-h3`
+- `PING` → `{"type":"pong","engine":"cpp20"}`
+- `EVAL_ARB` approved with `trade_count` unchanged / cash unchanged on `SNAPSHOT`
+- `EXEC_ARB` approved with positive `trade_pnl` and cash mutation
+- `RESET` ok
+
+## Environment notes
+
+- Docker Compose H1 overlay (`redpanda` + `clickhouse`) is provided; this validation
+  environment may not have a Docker daemon, so Kafka/ClickHouse are exercised via
+  in-memory backends (`BUS_BACKEND=memory`, `ARCHIVE_BACKEND=memory`).
+- Live capital remains gated (`LiveBroker` / enable+ack / testnet promotion).
+- Copilot is advisory-only and refuses risk bypass, live enablement, and signing-key requests.
+
+## Horizon docs
+
+- H1: `docs/H1_DATA_PLANE.md`
+- H2: `docs/H2_EXECUTION.md`
+- H3: `docs/H3_RESEARCH.md`
+- H4: `docs/H4_ONTOLOGY.md`
+- H5: `docs/H5_COPILOT.md`

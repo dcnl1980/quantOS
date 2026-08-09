@@ -18,7 +18,7 @@ async def lifespan(app):
     await runtime.stop()
 
 
-app = FastAPI(title=settings.app_name, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=settings.app_name, version="0.5.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[x.strip() for x in settings.api_cors_origins.split(",")],
@@ -170,37 +170,83 @@ async def engine_status():
 
 @app.get("/api/v1/market-graph")
 async def market_graph():
-    base = runtime.registry.graph()
-    nodes = {n["id"]: n for n in base["nodes"]}
-    edges = list(base["edges"])
-    for q in await runtime.state.all_quotes():
-        sid = f"symbol:{q.symbol}"
-        vid = f"venue:{q.venue}"
-        nodes.setdefault(sid, {"id": sid, "type": "instrument", "label": q.symbol})
-        nodes.setdefault(vid, {"id": vid, "type": "venue", "label": q.venue})
-        edges.append({"source": sid, "target": vid, "type": "LISTED_ON", "live": True})
-    for op in list(runtime.opportunities)[:100]:
-        if op.type.value != "cross_venue":
-            continue
-        a, b = f"venue:{op.buy_venue}", f"venue:{op.sell_venue}"
-        edges.append({
-            "source": a,
-            "target": b,
-            "type": "ARBITRAGE_WITH",
-            "symbol": op.symbol,
-            "net_edge_bps": op.net_edge_bps,
-        })
-    basis = runtime.basis.to_dict()
-    edges.append({
-        "source": "currency:USDT",
-        "target": "currency:USD",
-        "type": "BASIS",
-        "usdt_usd": basis["usdt_usd"],
-        "basis_bps": basis["basis_bps"],
-    })
-    nodes.setdefault("currency:USDT", {"id": "currency:USDT", "type": "currency", "label": "USDT"})
-    nodes.setdefault("currency:USD", {"id": "currency:USD", "type": "currency", "label": "USD"})
-    return {"nodes": list(nodes.values()), "edges": edges}
+    """Legacy alias for the H4 ontology graph."""
+    return await runtime.ontology_graph()
+
+
+@app.get("/api/v1/ontology")
+async def ontology_plane():
+    # Refresh summary counts without forcing a full contradiction rescan every poll.
+    graph = await runtime.ontology_graph()
+    snap = runtime.ontology.snapshot()
+    snap["graph"] = {
+        "nodes": len(graph.get("nodes", [])),
+        "edges": len(graph.get("edges", [])),
+        "edge_types": (graph.get("stats") or {}).get("edge_types", {}),
+    }
+    return snap
+
+
+@app.get("/api/v1/ontology/graph")
+async def ontology_graph():
+    return await runtime.ontology_graph()
+
+
+@app.get("/api/v1/ontology/prediction-markets")
+async def ontology_prediction_markets():
+    return runtime.ontology.prediction_book.to_list()
+
+
+@app.post("/api/v1/ontology/prediction-markets")
+async def ontology_register_prediction_market(
+    question: str,
+    venue: str = "polymarket",
+    settlement_source: str = "spot:binance:BTCUSDT",
+    underlying: str = "BTC",
+    yes_probability: float = 0.5,
+    market_id: str | None = None,
+    fee_bps: float = 100.0,
+):
+    return runtime.ontology.register_prediction_market(
+        question=question,
+        venue=venue,
+        settlement_source=settlement_source,
+        underlying=underlying,
+        yes_probability=yes_probability,
+        market_id=market_id,
+        fee_bps=fee_bps,
+    )
+
+
+@app.post("/api/v1/ontology/prediction-markets/{market_id}/probability")
+async def ontology_update_probability(
+    market_id: str,
+    outcome_label: str = "YES",
+    probability: float = 0.5,
+):
+    updated = runtime.ontology.update_outcome_probability(market_id, outcome_label, probability)
+    if not updated:
+        return {"ok": False, "reason": "unknown_market"}
+    return updated
+
+
+@app.get("/api/v1/ontology/contradictions")
+async def ontology_contradictions():
+    if not runtime.ontology.contradictions():
+        scan = await runtime.ontology_scan()
+        return {
+            "contradictions": scan["contradictions"],
+            "summary": scan["summary"],
+        }
+    return {
+        "contradictions": runtime.ontology.contradictions(),
+        "summary": runtime.ontology.snapshot()["contradictions"],
+    }
+
+
+@app.post("/api/v1/ontology/scan")
+async def ontology_scan():
+    return await runtime.ontology_scan()
 
 
 @app.get("/api/v1/instruments")
@@ -373,6 +419,85 @@ async def research_features():
 @app.get("/api/v1/research/governance")
 async def research_governance():
     return runtime.research.governor.snapshot()
+
+
+@app.get("/api/v1/copilot")
+async def copilot_plane():
+    return runtime.copilot.snapshot()
+
+
+@app.post("/api/v1/copilot/explain")
+async def copilot_explain(strategy_id: str = "cross_venue_arbitrage"):
+    research = runtime.research.snapshot()
+    metrics = {}
+    recent = (research.get("experiments") or {}).get("recent") or []
+    if recent:
+        metrics = recent[0].get("metrics") or {}
+    return runtime.copilot.explain_strategy(
+        strategy_id=strategy_id,
+        metrics=metrics,
+        governance=research.get("governance") or {},
+        opportunities=[o.to_dict() for o in list(runtime.opportunities)[:20]],
+    )
+
+
+@app.post("/api/v1/copilot/explain-fill")
+async def copilot_explain_fill(fill_id: str | None = None):
+    fills = list(runtime.fills)
+    if not fills:
+        return {"ok": False, "reason": "no_fills"}
+    fill = fills[-1].to_dict()
+    if fill_id:
+        match = next((f.to_dict() for f in fills if f.id == fill_id), None)
+        if not match:
+            return {"ok": False, "reason": "unknown_fill"}
+        fill = match
+    return runtime.copilot.explain_fill(fill)
+
+
+@app.post("/api/v1/copilot/plan-experiment")
+async def copilot_plan_experiment(
+    hypothesis: str,
+    strategy_id: str = "cross_venue_arbitrage",
+    focus: str = "edge_stability",
+):
+    return runtime.copilot.plan_experiment(
+        hypothesis=hypothesis,
+        strategy_id=strategy_id,
+        focus=focus,
+    )
+
+
+@app.post("/api/v1/copilot/analyze")
+async def copilot_analyze():
+    ctx = await runtime.copilot_context()
+    return runtime.copilot.analyze(
+        contradictions=ctx["contradictions"],
+        risk=ctx["risk"],
+        quotes=ctx["quotes"],
+        portfolio=ctx["portfolio"],
+    )
+
+
+@app.post("/api/v1/copilot/ask")
+async def copilot_ask(question: str):
+    ctx = await runtime.copilot_context()
+    return runtime.copilot.ask(question, context=ctx)
+
+
+@app.post("/api/v1/copilot/codegen")
+async def copilot_codegen(
+    name: str,
+    kind: str = "cross_venue_arbitrage",
+    hypothesis: str = "",
+    min_net_edge_bps: float = 8.0,
+):
+    return runtime.copilot.codegen(
+        name=name,
+        kind=kind,
+        hypothesis=hypothesis,
+        min_net_edge_bps=min_net_edge_bps,
+    )
 
 
 @app.get("/metrics")

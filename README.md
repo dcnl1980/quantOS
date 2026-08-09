@@ -26,7 +26,9 @@ Then open:
 - Terminal UI: `http://localhost:3000`
 - FastAPI / Swagger: `http://localhost:8000/docs`
 - Native engine status: `http://localhost:8000/api/v1/engine`
-- Market ontology graph: `http://localhost:8000/api/v1/market-graph`
+- Market ontology graph: `http://localhost:8000/api/v1/ontology/graph`
+- Ontology contradictions: `http://localhost:8000/api/v1/ontology/scan`
+- AI copilot: `http://localhost:8000/api/v1/copilot`
 
 The default configuration uses synthetic multi-venue prices so the complete path is visible immediately:
 
